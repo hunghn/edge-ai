@@ -7,6 +7,7 @@ models:
 capture:
   # Thiết bị thực tế (2026-09-21): webcam USB "UGREEN Camera 2K" trên /dev/video0.
   # Đo trên máy: MJPG 15 FPS ở cả 1920x1080 và 1280x720; YUYV chỉ 9 FPS -> dùng MJPG.
+  # Chốt C-13: giữ nguyên 1080p trong ring buffer (crop cho S4/S5 nét hơn, FPS không đổi).
   # Nếu sau này đổi sang camera CSI thì dùng lại pipeline nvarguscamerasrc bên dưới.
   source: gstreamer
   pipeline: >-

@@ -1,6 +1,6 @@
 # M4 — Database cục bộ trên Nano (SQLite WAL)
 
-**Trạng thái:** Chưa bắt đầu · **Tuần:** 3 · **Phụ thuộc:** M1 · **Cần Nano:** Không
+**Trạng thái:** Sẵn sàng làm (mọi giá trị chặn đã chốt) · **Tuần:** 3 · **Phụ thuộc:** M1 · **Cần Nano:** Không
 
 ## 1. Mục tiêu và đầu ra
 - Một file SQLite duy nhất, dùng chung cho 3 tiến trình `engine`, `kiosk` và `sync`, không cần socket hay hàng đợi.
@@ -144,9 +144,10 @@ CREATE INDEX ix_latency_ts ON stage_latency(ts);
 - **Loại sự kiện outbox:** `enrollment.created`, `session.closed`, `spoof.detected`, `patient.revoked_local`, `device.heartbeat`. Payload JSON có `schema: 1`.
 
 ## 6. Giá trị cần xác nhận
-- **D-14:** thời gian giữ evidence.
-- **D-22:** thời gian giữ log phiên và metrics trên Nano.
-- **D-23:** số vòng PBKDF2 (đề xuất 100 000; cần đo thời gian verify trên Nano < 0.5 s), độ dài PIN, số lần sai, thời gian khoá.
+- ~~D-14~~ → **C-16:** evidence = crop mặt (scale 4.0), JPEG, TTL **7 ngày** (`antispoof.evidence` trong config).
+- ~~D-22 (phần Nano)~~ → **C-17:** log phiên và metrics giữ **30 ngày** (`retention.sessions_days`). Phần server vẫn mở.
+- ~~D-23~~ → **C-18:** PIN **6 chữ số**, sai **5 lần** khoá **5 phút** (`auth.*`).
+- Còn lại: số vòng PBKDF2 tạm để 100 000, phải **đo thời gian verify trên Nano** ở M4 và giảm nếu vượt 0.5 s.
 - `outbox` backoff: cơ số, trần, jitter. Đề xuất 5 s × 2^n, trần 10 phút, jitter ±20%; chờ duyệt cùng M7.
 
 ## 7. File

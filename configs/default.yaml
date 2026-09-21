@@ -34,6 +34,11 @@ pose_coarse:                      # S3, from 5 keypoints
 antispoof:                        # S4
   p_real_min: 0.85                # TBD confirm: applied to (softmax_v2 + softmax_v1se) / 2
   real_class_index: 1             # 0 = print, 1 = real, 2 = replay
+  evidence:                       # C-16: face crop only, JPEG, 7-day TTL
+    save: crop                    # crop | frame | none
+    crop_scale: 4.0
+    jpeg_quality: 90
+    ttl_days: 7
   crops:
     - model: antispoof_v2
       scale: 2.7
@@ -69,3 +74,15 @@ match:                            # S9 — TBD (§6)
 
 decision:                         # S10 — TBD (§6.3)
   rules: null
+
+retention:                        # local storage lifetime (engine runs this periodically)
+  patients_hours: 24              # C-04
+  sessions_days: 30               # C-17
+  metrics_days: 30
+  interval_s: 600
+
+auth:                             # C-18: nurse PIN for the kiosk admin screen
+  pin_length: 6
+  max_failed_attempts: 5
+  lockout_s: 300
+  pbkdf2_iterations: 100000       # verify time on the Nano measured in M4

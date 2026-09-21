@@ -62,7 +62,7 @@ TrtBackend(path)
 
 ## 6. Giá trị cần xác nhận
 - ~~D-13: loại camera~~ → đã chốt C-12: webcam USB, MJPG 1080p @ 15 FPS.
-- **D-16:** gộp 2 MiniFASNet hay không. Quyết sau khi có số RAM ở M2-T12.
+- ~~D-16~~ → **chốt C-15: giữ 5 engine riêng**. Cả 5 engine nạp cùng lúc chỉ tốn 1024 MB RSS.
 - **Ngưỡng parity FP16** (đề xuất, chờ duyệt cùng plan này):
 
 | Model | Tiêu chí |

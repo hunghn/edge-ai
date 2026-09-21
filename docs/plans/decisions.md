@@ -20,6 +20,12 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | C-09 | Preview camera cho kiosk | Engine ghi JPEG thu nhỏ vào `/dev/shm/edgeface/preview.jpg` (ghi tạm rồi rename) | 2026-09-17 | Plan DB/UI đã duyệt |
 | C-10 | Môi trường Nano thực tế | JetPack 4.6 / Python 3.6.9 / TensorRT 8.2.1.8 / numpy 1.13.3 / OpenCV 4.1.1 **không CUDA**, có GStreamer 1.14.5 / SQLite 3.22.0 / swap chỉ có zram 4×494 MB | 2026-09-21 | Kiểm kê thiết bị (M2-T01) |
 | C-11 | MiniFASNet trên TensorRT | `BatchNormalization` 1 chiều parse được bình thường, **không cần** `fold_bn1d.py` | 2026-09-21 | 5 engine build OK trên máy |
+| C-13 | D-12 — độ phân giải ring buffer | **Giữ 1080p** (camera cho 14.9 FPS ở cả 1080p và 720p) | 2026-09-21 | Người dùng |
+| C-14 | Đo công suất | Cho phép `sudo` không mật khẩu **chỉ với `/usr/bin/tegrastats`** (`/etc/sudoers.d/edgeface-tegrastats`); dùng `bench_model.py --tegrastats --tegrastats-sudo`. Không có quyền root nào khác được mở | 2026-09-21 | Người dùng |
+| C-16 | D-14 — ảnh bằng chứng spoof | Lưu **crop mặt** (scale 4.0) dạng JPEG, TTL **7 ngày** | 2026-09-21 | Người dùng |
+| C-17 | D-22 (phần Nano) — nhật ký phiên | Giữ **30 ngày** trên Nano (không chứa ảnh); thời gian giữ embedding trên server vẫn mở | 2026-09-21 | Người dùng |
+| C-18 | D-23 — chính sách PIN | **6 chữ số**, sai **5 lần** thì khoá **5 phút**; hash PBKDF2-HMAC-SHA256 | 2026-09-21 | Người dùng |
+| C-15 | D-16 — gộp 2 MiniFASNet | **Không gộp**, giữ 5 engine riêng: cả 5 engine chỉ tốn 1024 MB RSS so với ngân sách 2.0–2.6 GB | 2026-09-21 | Đo ở M2 |
 
 ## Mở — pipeline
 
@@ -36,10 +42,7 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | D-09 | S6 | Nguồn 5 điểm căn chỉnh: kps SCRFD hay 5 điểm rút từ 106 | Kps SCRFD (khớp cách ArcFace được huấn luyện) | M3 |
 | D-10 | S5 | Nội tham số camera cho solvePnP: xấp xỉ (f = chiều rộng ảnh) hay hiệu chuẩn checkerboard | Xấp xỉ trước, hiệu chuẩn nếu sai số pose lớn | M3 |
 | D-11 | S5 | Định nghĩa vùng tính blur/luminance (crop nào, resize về kích thước nào) | Crop mặt đã căn chỉnh 112×112, ảnh xám | M3 |
-| D-12 | S0 | Độ phân giải khung giữ trong ring buffer: 1080p hay 720p | Đo trên máy: MJPG cho 14.9 FPS ở **cả** 1080p và 720p, nên giữ 1080p (crop S4/S5 nét hơn) — chờ bạn xác nhận | M3 |
-| D-14 | S4 | Ảnh bằng chứng spoof lưu gì (khung đầy đủ hay crop 2.7×) và giữ bao lâu | Crop scale 4.0, JPEG | M4 |
 | D-15 | S3 | Cách quy đổi tỉ lệ hình học 5 điểm sang độ (yaw) | Công thức trong `stages/S3_coarse_pose.md`, kiểm chứng bằng solvePnP | M3 |
-| D-16 | S4 | Gộp 2 MiniFASNet thành 1 engine hay giữ 5 engine riêng | Giữ riêng (đơn giản, đo RAM ở M2 rồi quyết) | M2 |
 | D-17 | S9 | Cách hiểu luật "3-of-5": ≥ 3 frame bầu cùng một BN, áp dụng cả khi chỉ có 3–4 frame | Như mô tả trong `stages/S9_match.md` §3.2 | M5 |
 | D-18 | M9 | FAR mục tiêu để chọn `match.threshold` (1e-3 hay 1e-4); mức tăng FRR tối đa chấp nhận khi thêm margin | FAR 1e-3 | M9 |
 | D-30 | S4/S10 | Luật gộp spoof cấp phiên: "≥ 1 frame spoof" hay "≥ M trong K frame" | Cần chốt | M5 |
@@ -51,8 +54,7 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 |---|---|---|---|---|
 | D-20 | Enrollment | Số template mỗi BN; chặn hay chỉ cảnh báo khi khuôn mặt trùng BN khác | 5 template; cảnh báo và yêu cầu điều dưỡng xác nhận lần 2 | M5 |
 | D-21 | Session | Timeout `AWAIT_NURSE`, thời gian `COOLDOWN`, thời gian tự khoá màn quản trị | Cần chốt | M5, M6 |
-| D-22 | Lưu trữ | Thời gian giữ log phiên trên Nano; thời gian giữ embedding trên server | Cần chốt (liên quan chính sách riêng tư của phòng khám) | M4, M7 |
-| D-23 | Bảo mật | Độ dài PIN, số lần sai trước khi khoá, thời gian khoá | Cần chốt | M4, M6 |
+| D-22 | Lưu trữ | *(phần Nano đã chốt: C-17)* Thời gian giữ embedding và log trên **server** | Cần chốt (liên quan chính sách riêng tư của phòng khám) | M7 |
 | D-24 | Sync | Cơ chế ký model bundle | HMAC-SHA256 bằng khoá chung (stdlib) | M7 |
 | D-25 | Kiosk | Kích thước và độ phân giải màn hình cảm ứng | Cần chốt | M6 |
 | D-26 | Sync | Chu kỳ kéo gallery/revocation | Cần chốt | M7 |

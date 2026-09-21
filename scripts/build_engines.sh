@@ -2,7 +2,11 @@
 # Build TensorRT FP16 engines from models/onnx/*.onnx ON THE JETSON NANO.
 # Engines are device- and TensorRT-version-specific and must never be committed.
 #
-#   scripts/build_engines.sh [--models "det_500m w600k_mbf"] [--workspace 1024] [--force]
+#   scripts/build_engines.sh [--models "det_500m w600k_mbf"] [--workspace 1024]
+#                            [--force] [--verbose]
+#
+# Building all five engines takes roughly 30-60 min on a Nano and is memory hungry:
+# close the desktop session or add swap if trtexec gets killed.
 #
 # For every engine a sidecar <name>.engine.json records the source ONNX sha256, the
 # TensorRT version and the build arguments, so stale engines can be detected later
@@ -16,6 +20,7 @@ LOG_DIR="$REPO/logs"
 TRTEXEC="${TRTEXEC:-/usr/src/tensorrt/bin/trtexec}"
 WORKSPACE=1024
 FORCE=0
+VERBOSE=0
 MODELS="det_500m 2d106det w600k_mbf minifasnet_v2_2.7 minifasnet_v1se_4.0"
 
 while [ $# -gt 0 ]; do
@@ -23,6 +28,7 @@ while [ $# -gt 0 ]; do
     --models) shift; MODELS="$1" ;;
     --workspace) shift; WORKSPACE="$1" ;;
     --force) FORCE=1 ;;
+    --verbose) VERBOSE=1 ;;   # full tactic log; slower and much larger logs
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
   shift
@@ -45,8 +51,10 @@ for name in $MODELS; do
   fi
   sha="$(sha256sum "$onnx" | cut -d' ' -f1)"
   echo -n "BUILD $name ... "
+  VERBOSE_FLAG=""
+  [ "$VERBOSE" -eq 1 ] && VERBOSE_FLAG="--verbose"
   if "$TRTEXEC" --onnx="$onnx" --fp16 --workspace="$WORKSPACE" \
-       --saveEngine="$engine" --verbose > "$log" 2>&1; then
+       --saveEngine="$engine" $VERBOSE_FLAG > "$log" 2>&1; then
     python3 - "$engine.json" "$name" "$sha" "$TRT_VERSION" "$WORKSPACE" <<'PY'
 import json, sys, time
 path, name, sha, trt_version, workspace = sys.argv[1:6]

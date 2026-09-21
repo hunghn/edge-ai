@@ -32,7 +32,7 @@ Khác với repo tham chiếu: tham chiếu dùng ngưỡng 0.65 và đảo nhã
 ## 5. Giá trị cần xác nhận
 - **D-05:** 0.85 áp lên trung bình hai softmax (đề xuất) hay lên tổng (thang 0–2).
 - **D-14:** ảnh bằng chứng lưu gì và giữ bao lâu.
-- **D-16:** giữ 2 engine riêng hay gộp.
+- ~~D-16~~ → đã chốt: giữ 2 engine riêng (C-15).
 - **D-30 (mới):** luật gộp spoof cấp phiên, ví dụ "≥ 1 frame spoof" hay "≥ M trong K frame".
 
 ## 6. File

@@ -78,7 +78,7 @@ frame (S0) ─► S1 detect ──0 mặt──► guidance NO_FACE, collector.r
 - **Ngân sách thời gian:** chưa đặt con số; số liệu M2 là cơ sở để đặt ở bản cập nhật của plan này.
 
 ## 7. Giá trị cần xác nhận
-D-05, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-15 (chi tiết trong từng plan stage và `decisions.md`).
+D-05, D-06, D-07, D-08, D-09, D-10, D-11, D-15, D-31 (chi tiết trong từng plan stage và `decisions.md`). D-12 và D-13 đã chốt ở M2.
 
 ## 8. Tiêu chí hoàn thành
 - [ ] 9 stage có test unit pass, `vermin` sạch
@@ -89,6 +89,6 @@ D-05, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-15 (chi tiết trong từng pl
 ## 9. Rủi ro
 | Rủi ro | Giảm thiểu |
 |---|---|
-| Chuyển BGRx→BGR 1080p trên CPU làm tụt FPS | Đo ở S0; dùng 720p hoặc `nvvidconv` resize trong pipeline GStreamer (D-12) |
+| Giải mã MJPG 1080p trên CPU làm tụt FPS | Đo ở S0 (sơ bộ 14.9 FPS); OpenCV của JetPack **không có CUDA** nên mọi resize/warp đều chạy trên CPU |
 | Công thức yaw từ 5 điểm lệch nhiều so với solvePnP | Hiệu chỉnh hệ số trên video có nhãn góc (S3) |
 | Ngưỡng blur 60 phụ thuộc kích thước crop | Chốt D-11 trước khi hiệu chuẩn |
