@@ -1,0 +1,46 @@
+# Source of truth for model files. ONNX/engine binaries are never committed.
+# sha256 values are filled in by tools/convert/fix_shapes.py for the final (fixed-shape) ONNX.
+# Tensor layout for all models: NCHW float32. "swap_rb: true" means the wrapper converts the
+# BGR frame to RGB before normalizing (matches cv2.dnn.blobFromImage(swapRB=True) in the
+# reference repo).
+
+det_500m:
+  file: det_500m.onnx
+  source: insightface buffalo_sc.zip (v0.7 release)
+  input_shape: [1, 3, 640, 640]
+  preprocess: {mean: 127.5, std: 128.0, swap_rb: true, letterbox: true}
+  outputs: "9 tensors: score (N,1), bbox (N,4), kps (N,10) for strides 8/16/32, 2 anchors"
+  sha256: 962b27007568a0f2dfef10cd6482688d8a6c2a1df589e5cf8f3004c816504360
+
+2d106det:
+  file: 2d106det.onnx
+  source: insightface buffalo_l.zip (v0.7 release)
+  input_shape: [1, 3, 192, 192]
+  # graph has its own Sub/Mul input normalization (checked by fix_shapes.py), so mean 0 / std 1
+  preprocess: {mean: 0.0, std: 1.0, swap_rb: true, crop: "bbox x1.5 -> 192x192"}
+  outputs: "(1, 212): 106 x 2 in [-1, 1]"
+  sha256: 14ba5fc3149c2d9df23ace0c68e88de218e31179e21b4741b6bd24fa5d366988
+
+w600k_mbf:
+  file: w600k_mbf.onnx
+  source: insightface buffalo_sc.zip (v0.7 release)
+  input_shape: [1, 3, 112, 112]
+  preprocess: {mean: 127.5, std: 127.5, swap_rb: true}
+  outputs: "(1, 512) embedding, L2-normalized by the wrapper"
+  sha256: b086db57a70ce38d8d50ada7215a5801e1cb9eeb53594e2f418f9925bd0340f2
+
+minifasnet_v2_2.7:
+  file: minifasnet_v2_2.7.onnx
+  source: ims_id_server anti_spoofing/resources/anti_spoof_models/2.7_80x80_MiniFASNetV2.pth
+  input_shape: [1, 3, 80, 80]
+  preprocess: {mean: 0.0, std: 1.0, swap_rb: false, crop: "CropImage scale 2.7, bbox [x,y,w,h]"}
+  outputs: "(1, 3) logits; softmax in wrapper; index 1 = real"
+  sha256: b96447e0ba1ab7c837dfad0d3c97f34cd6029e232297122429574d9628bdc3a1
+
+minifasnet_v1se_4.0:
+  file: minifasnet_v1se_4.0.onnx
+  source: ims_id_server anti_spoofing/resources/anti_spoof_models/4_0_0_80x80_MiniFASNetV1SE.pth
+  input_shape: [1, 3, 80, 80]
+  preprocess: {mean: 0.0, std: 1.0, swap_rb: false, crop: "CropImage scale 4.0, bbox [x,y,w,h]"}
+  outputs: "(1, 3) logits; softmax in wrapper; index 1 = real"
+  sha256: ecf18ab9faf60cdf10137bccf172179951ff2bea2a5e0441be454b22e8c01901
