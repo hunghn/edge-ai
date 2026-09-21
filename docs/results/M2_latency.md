@@ -67,19 +67,39 @@ Các hướng giảm tải, xếp theo thứ tự nên thử ở M3:
 3. **S5 và S7 chỉ chạy khi frame qua hết các gate trước** — đã nằm trong thiết kế engine loop.
 4. **det_500m là phần nặng nhất (40.75 ms).** Có thể chạy detector ở nhịp thấp hơn và bám theo bbox giữa hai lần phát hiện, nhưng việc này thêm logic tracking; chỉ làm nếu đo ở M3 cho thấy cần.
 
-## 6. Công suất — chưa đo được
-`tegrastats` trên máy này **không in các rail `POM_*`**. Cảm biến INA3221 có tồn tại (`/sys/bus/i2c/drivers/ina3221x/6-0040/iio:device0/in_power*_input`) nhưng chỉ root đọc được, mà `sudo` trên máy đang yêu cầu mật khẩu.
+## 6. Công suất và nhiệt độ
+`tegrastats` chỉ in các rail `POM_*` khi chạy bằng root. Máy đã được cấp quyền sudo **giới hạn đúng một lệnh** (`/etc/sudoers.d/edgeface-tegrastats`, quyết định C-14), nên `bench_model.py --tegrastats --tegrastats-sudo` đọc được đầy đủ.
 
-Hai cách để có số liệu công suất (cần bạn chọn):
-- Cho phép `sudo` không cần mật khẩu cho `tegrastats` (khi đó dùng `TegrastatsMonitor(sudo=True)` đã có sẵn), hoặc
-- Bạn tự chạy `sudo tegrastats` trong lúc benchmark và gửi lại log.
+Đo trong lúc benchmark cả 5 model (lần chạy `schedutil`, xem §6.1):
 
-Trước mắt báo cáo có: RAM, CPU từng core, GPU% và nhiệt độ. GPU trung bình khi benchmark là 51%, nhiệt độ cao nhất khoảng 39–51 °C (chưa throttle).
+| Rail | Trung bình | Đỉnh |
+|---|---|---|
+| POM_5V_IN (toàn máy) | **5 259 mW** | 7 043 mW |
+| POM_5V_GPU | 1 780 mW | 3 429 mW |
+| POM_5V_CPU | 1 026 mW | 1 711 mW |
+
+Nhiệt độ đỉnh: CPU 43.5 °C, GPU 43.0 °C, thermal 42.5 °C — chưa tới ngưỡng throttle. GPU trung bình 56%, CPU tổng 95% (gần một lõi rưỡi trong bốn lõi).
+
+Nguồn micro-USB 5 V/2 A (10 W) không đủ an toàn ở mức đỉnh 7 W cộng thêm camera và ngoại vi; phải dùng jack tròn 5 V/4 A.
+
+### 6.1 Ảnh hưởng của `jetson_clocks` — lưu ý khi đo lại
+`nvpmodel` giữ nguyên sau khi khởi động lại, nhưng **`jetson_clocks` thì không**. Sau một lần reboot, governor trở lại `schedutil` và số đo chậm đi rõ rệt:
+
+| Model | Với `jetson_clocks` | Sau reboot (`schedutil`) |
+|---|---|---|
+| det_500m | 40.75 ms | 41.66 ms |
+| 2d106det | 9.01 ms | 9.51 ms |
+| w600k_mbf | **14.63 ms** | **18.68 ms** |
+| minifasnet_v2_2.7 | 6.06 ms | 5.63 ms |
+| minifasnet_v1se_4.0 | 7.01 ms | 6.29 ms |
+| **Tổng** | **77.5 ms (12.9 FPS)** | **81.8 ms (12.2 FPS)** |
+
+Chênh lệch tập trung ở ArcFace (+28%). Vì vậy quy trình đo chuẩn phải chạy `sudo jetson_clocks` **ngay trước** mỗi lần benchmark, và báo cáo luôn ghi rõ trạng thái xung nhịp. Bảng ở §1 là số liệu có `jetson_clocks`.
 
 ## 7. Trạng thái tiêu chí hoàn thành M2
 - [x] `docs/device_inventory.md` có phiên bản thực tế
 - [x] 5 engine FP16 build thành công, không commit vào git
 - [x] `tests/device` pass với ngưỡng trong plan §6
 - [x] Bảng latency + RAM (mục 1 và 3)
-- [ ] Công suất (xem mục 6)
+- [x] Công suất: 5.26 W trung bình, đỉnh 7.04 W (mục 6)
 - [x] `vermin --target=3.6-` sạch cho code mới; `tests/unit` (29 test) pass ngay trên Nano
