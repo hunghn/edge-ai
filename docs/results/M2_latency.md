@@ -1,7 +1,7 @@
 # M2 — Kết quả đo latency từng model trên Jetson Nano
 
 **Ngày đo:** 2026-09-21 · **Thiết bị:** xem [`docs/device_inventory.md`](../device_inventory.md)
-**Chế độ nguồn:** nvpmodel mode 0 (MAXN 10 W), `jetson_clocks` · **Precision:** FP16 · **Batch:** 1
+**Chế độ nguồn:** nvpmodel mode 0 (MAXN 10 W), đã chạy `jetson_clocks` · **Precision:** FP16 · **Batch:** 1 · **Engine build lúc máy rảnh** (quan trọng, xem §6.1)
 
 Tái lập:
 ```bash
@@ -12,12 +12,12 @@ ssh nano 'cd ~/edge-ai && python3 scripts/bench_model.py --all --warmup 30 --ite
 
 | Model | Tiền xử lý | Suy luận | Suy luận p95 | Hậu xử lý | Tổng | ~FPS nếu chạy riêng |
 |---|---|---|---|---|---|---|
-| det_500m (SCRFD 640×640) | 10.36 | 29.07 | 29.31 | 1.32 | **40.75** | 24.5 |
-| 2d106det (192×192) | 2.12 | 6.78 | 6.84 | 0.10 | **9.01** | 111.0 |
-| w600k_mbf (ArcFace 112×112) | 0.18 | 14.39 | 14.45 | 0.06 | **14.63** | 68.4 |
-| minifasnet_v2_2.7 (80×80) | 0.37 | 5.61 | 5.76 | 0.07 | **6.06** | 165.1 |
-| minifasnet_v1se_4.0 (80×80) | 0.37 | 6.57 | 6.77 | 0.07 | **7.01** | 142.7 |
-| **Tổng (mọi model chạy 1 lần/frame)** | 13.4 | 62.4 | | 1.6 | **77.5** | **12.9 FPS** |
+| det_500m (SCRFD 640×640) | 10.54 | 29.65 | 29.82 | 1.35 | **41.55** | 24.1 |
+| 2d106det (192×192) | 2.30 | 7.24 | 7.31 | 0.11 | **9.65** | 103.6 |
+| w600k_mbf (ArcFace 112×112) | 0.18 | 14.59 | 14.65 | 0.06 | **14.83** | 67.4 |
+| minifasnet_v2_2.7 (80×80) | 0.37 | 5.11 | 5.21 | 0.08 | **5.56** | 180.0 |
+| minifasnet_v1se_4.0 (80×80) | 0.37 | 5.75 | 5.89 | 0.08 | **6.20** | 161.2 |
+| **Tổng (mọi model chạy 1 lần/frame)** | 13.8 | 62.3 | | 1.7 | **77.8** | **12.9 FPS** |
 
 - Tiền xử lý của detector đo trên ảnh fixture 512×512; với khung 1080p thật thì letterbox tốn thêm khoảng 2.8 ms (đo riêng).
 - Hậu xử lý của detector (decode anchor + NMS) là 1.32 ms, các model còn lại không đáng kể.
@@ -70,36 +70,35 @@ Các hướng giảm tải, xếp theo thứ tự nên thử ở M3:
 ## 6. Công suất và nhiệt độ
 `tegrastats` chỉ in các rail `POM_*` khi chạy bằng root. Máy đã được cấp quyền sudo **giới hạn đúng một lệnh** (`/etc/sudoers.d/edgeface-tegrastats`, quyết định C-14), nên `bench_model.py --tegrastats --tegrastats-sudo` đọc được đầy đủ.
 
-Đo trong lúc benchmark cả 5 model (lần chạy `schedutil`, xem §6.1):
+Đo trong lúc benchmark cả 5 model:
 
 | Rail | Trung bình | Đỉnh |
 |---|---|---|
-| POM_5V_IN (toàn máy) | **5 259 mW** | 7 043 mW |
-| POM_5V_GPU | 1 780 mW | 3 429 mW |
-| POM_5V_CPU | 1 026 mW | 1 711 mW |
+| POM_5V_IN (toàn máy) | **5 468 mW** | 7 120 mW |
+| POM_5V_GPU | 1 914 mW | 3 690 mW |
+| POM_5V_CPU | 1 080 mW | 1 748 mW |
 
-Nhiệt độ đỉnh: CPU 43.5 °C, GPU 43.0 °C, thermal 42.5 °C — chưa tới ngưỡng throttle. GPU trung bình 56%, CPU tổng 95% (gần một lõi rưỡi trong bốn lõi).
+Nhiệt độ đỉnh: CPU 42.0 °C, GPU 40.5 °C, thermal 41.0 °C — chưa tới ngưỡng throttle. GPU trung bình 48%, CPU tổng 95% (gần một lõi rưỡi trong bốn lõi).
 
 Nguồn micro-USB 5 V/2 A (10 W) không đủ an toàn ở mức đỉnh 7 W cộng thêm camera và ngoại vi; phải dùng jack tròn 5 V/4 A.
 
-### 6.1 Ảnh hưởng của `jetson_clocks` — lưu ý khi đo lại
-`nvpmodel` giữ nguyên sau khi khởi động lại, nhưng **`jetson_clocks` thì không**. Sau một lần reboot, governor trở lại `schedutil` và số đo chậm đi rõ rệt:
+### 6.1 Hai yếu tố làm số đo dao động: `jetson_clocks` và điều kiện build engine
 
-| Model | Với `jetson_clocks` | Sau reboot (`schedutil`) |
+**Đính chính:** bản trước của tài liệu này quy toàn bộ chênh lệch cho `jetson_clocks`. Đo kỹ lại cho thấy có **hai** nguyên nhân tách biệt, và nguyên nhân lớn hơn nằm ở lúc build engine.
+
+| Lần đo | ArcFace p50 | Tổng 5 model |
 |---|---|---|
-| det_500m | 40.75 ms | 41.66 ms |
-| 2d106det | 9.01 ms | 9.51 ms |
-| w600k_mbf | **14.63 ms** | **18.68 ms** |
-| minifasnet_v2_2.7 | 6.06 ms | 5.63 ms |
-| minifasnet_v1se_4.0 | 7.01 ms | 6.29 ms |
-| **Tổng** | **77.5 ms (12.9 FPS)** | **81.8 ms (12.2 FPS)** |
+| Engine build lúc máy rảnh, có `jetson_clocks` | **14.59 ms** | **77.8 ms (12.9 FPS)** |
+| Engine build lúc máy tải nặng, có `jetson_clocks` | 18.41 ms | 81.3 ms (12.3 FPS) |
+| Engine build lúc máy tải nặng, không `jetson_clocks` | 18.44 ms | 81.8 ms (12.2 FPS) |
 
-Chênh lệch tập trung ở ArcFace (+28%). Vì vậy quy trình đo chuẩn phải chạy `sudo jetson_clocks` **ngay trước** mỗi lần benchmark, và báo cáo luôn ghi rõ trạng thái xung nhịp. Bảng ở §1 là số liệu có `jetson_clocks`.
+1. **Điều kiện build engine (≈ 4 ms/frame).** TensorRT chọn tactic bằng cách *đo thử* từng phương án ngay lúc build. Nếu máy đang tải nặng, phép đo bị nhiễu và nó chọn nhầm tactic chậm hơn. Cùng một lệnh `trtexec`, cùng file ONNX: log build lúc máy tải nặng ghi 18.08 ms, lúc máy rảnh ghi 14.24 ms. **Luôn build engine trên máy rảnh** (đăng xuất phiên đồ hoạ, không chạy song song việc khác), và kiểm tra con số mà `trtexec` in ra ở cuối mỗi lần build.
+2. **`jetson_clocks` (ảnh hưởng tới độ ổn định, không phải tốc độ trung bình).** p50 gần như không đổi, nhưng độ tản thì khác hẳn: p95 của S1 trong pipeline giảm từ 71.4 ms xuống 40.8 ms, tức gần sát p50. `nvpmodel` giữ nguyên sau khi khởi động lại còn `jetson_clocks` thì không, nên phải chạy lại sau mỗi lần reboot, trước mỗi lần đo.
 
 ## 7. Trạng thái tiêu chí hoàn thành M2
 - [x] `docs/device_inventory.md` có phiên bản thực tế
 - [x] 5 engine FP16 build thành công, không commit vào git
 - [x] `tests/device` pass với ngưỡng trong plan §6
 - [x] Bảng latency + RAM (mục 1 và 3)
-- [x] Công suất: 5.26 W trung bình, đỉnh 7.04 W (mục 6)
+- [x] Công suất: 5.47 W trung bình, đỉnh 7.12 W (mục 6)
 - [x] `vermin --target=3.6-` sạch cho code mới; `tests/unit` (29 test) pass ngay trên Nano

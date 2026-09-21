@@ -5,8 +5,11 @@
 #   scripts/build_engines.sh [--models "det_500m w600k_mbf"] [--workspace 1024]
 #                            [--force] [--verbose]
 #
-# Building all five engines takes roughly 30-60 min on a Nano and is memory hungry:
-# close the desktop session or add swap if trtexec gets killed.
+# Build on an IDLE machine. TensorRT picks kernels by timing candidates during the
+# build, so a loaded machine measures them badly and bakes a slower engine: the same
+# w600k_mbf ONNX gave 18.08 ms when built under load and 14.24 ms when built idle.
+# Building all five takes roughly 30-60 min on a Nano and is memory hungry: log out of
+# the desktop session or add swap if trtexec gets killed.
 #
 # For every engine a sidecar <name>.engine.json records the source ONNX sha256, the
 # TensorRT version and the build arguments, so stale engines can be detected later

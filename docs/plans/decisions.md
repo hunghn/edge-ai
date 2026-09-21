@@ -25,6 +25,7 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | C-16 | D-14 — ảnh bằng chứng spoof | Lưu **crop mặt** (scale 4.0) dạng JPEG, TTL **7 ngày** | 2026-09-21 | Người dùng |
 | C-17 | D-22 (phần Nano) — nhật ký phiên | Giữ **30 ngày** trên Nano (không chứa ảnh); thời gian giữ embedding trên server vẫn mở | 2026-09-21 | Người dùng |
 | C-18 | D-23 — chính sách PIN | **6 chữ số**, sai **5 lần** thì khoá **5 phút**; hash PBKDF2-HMAC-SHA256 | 2026-09-21 | Người dùng |
+| C-19 | Quy trình đo hiệu năng | Trước mỗi lần đo: `sudo jetson_clocks` (không tự áp dụng lại sau reboot). Engine **phải build lúc máy rảnh** — build lúc tải nặng làm TensorRT chọn tactic chậm hơn (ArcFace 18.08 ms so với 14.24 ms) | 2026-09-21 | Đo ở M2/M3 |
 | C-15 | D-16 — gộp 2 MiniFASNet | **Không gộp**, giữ 5 engine riêng: cả 5 engine chỉ tốn 1024 MB RSS so với ngân sách 2.0–2.6 GB | 2026-09-21 | Đo ở M2 |
 
 ## Mở — pipeline

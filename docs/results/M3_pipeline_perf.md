@@ -11,19 +11,21 @@ python3 tools/viz/landmark_index.py                                    # kiểm 
 
 ## 1. Latency từng stage trên Jetson Nano (TensorRT FP16)
 Video thử: 60 frame 1280×720, một khuôn mặt, có 6 frame cố tình làm mờ.
-**Chưa chạy `jetson_clocks`** nên đây là số liệu bi quan (xem M2 §6.1).
+Đã chạy `jetson_clocks`, engine build lúc máy rảnh (xem M2 §6.1 — cả hai điều kiện đều quan trọng).
 
 | Stage | n | p50 (ms) | p95 (ms) | Ghi chú |
 |---|---|---|---|---|
-| S1 detect | 60 | **41.70** | 71.41 | letterbox 720p→640 + suy luận + NMS |
-| S2 subject | 60 | 0.12 | 0.14 | thuần hình học |
-| S3 coarse pose | 57 | 0.26 | 0.35 | 5 điểm, rẻ đúng như thiết kế |
-| S4 anti-spoof | 57 | 15.98 | 20.77 | 2 crop + 2 suy luận |
-| S5 landmark | 57 | 10.84 | 17.52 | 2d106det |
-| S5 pose + IQA | 114 | 1.86 | 2.15 | solvePnP và Laplacian (2 lần gọi mỗi frame) |
-| S6 align | 51 | 1.90 | 2.15 | |
-| S7 embed | 51 | 19.28 | 41.69 | ArcFace |
-| **e2e** | 60 | **96.30** | 148.68 | **≈ 10.4 FPS** |
+| S1 detect | 60 | **40.35** | 40.83 | letterbox 720p→640 + suy luận + NMS |
+| S2 subject | 60 | 0.12 | 0.13 | thuần hình học |
+| S3 coarse pose | 57 | 0.26 | 0.26 | 5 điểm, rẻ đúng như thiết kế |
+| S4 anti-spoof | 57 | 16.15 | 20.30 | 2 crop + 2 suy luận |
+| S5 landmark | 57 | 10.36 | 10.87 | 2d106det |
+| S5 pose + IQA | 114 | 1.83 | 2.18 | solvePnP và Laplacian (2 lần gọi mỗi frame) |
+| S6 align | 51 | 1.90 | 2.01 | |
+| S7 embed | 51 | 15.33 | 15.38 | ArcFace |
+| **e2e** | 60 | **89.04** | 93.44 | **≈ 11.2 FPS** |
+
+Trước khi ghim xung nhịp, cùng phép đo cho e2e p50 96.30 ms và p95 **148.68** ms. Giá trị trung vị chỉ khá hơn 8%, nhưng **độ tản giảm hẳn**: p95 của S1 từ 71.4 xuống 40.8 ms. Với kiosk thì tính ổn định này quan trọng hơn vài mili giây trung bình.
 
 Trên máy dev (x86, onnxruntime, CPU): e2e p50 **76.21 ms**, S1 32.23 ms, S4 8.55 ms, S7 23.53 ms.
 
@@ -71,4 +73,5 @@ Nguyên nhân là mô hình 3D dùng chung cho mọi người cộng với nội
 - [x] `run_pipeline_offline.py` xuất `frames.csv`, `embeddings.npz`, `summary.md`
 - [x] Chạy trên Nano với TensorRT, có bảng latency
 - [x] Không hardcode ngưỡng: mọi giá trị đọc từ config
-- [ ] Đo lại sau khi có `jetson_clocks` và camera lắp đúng vị trí
+- [x] Đo lại với `jetson_clocks` và engine build lúc máy rảnh
+- [ ] Đo lại với camera lắp đúng vị trí kiosk (sau khi chốt D-06/D-07)
