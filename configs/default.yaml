@@ -75,6 +75,10 @@ match:                            # S9 — TBD (§6)
 decision:                         # S10 — TBD (§6.3)
   rules: null
 
+storage:
+  db_path: var/edge.db            # nano.yaml overrides with /var/lib/edgeface/edge.db
+  evidence_dir: var/evidence      # spoof evidence only (C-16)
+
 retention:                        # local storage lifetime (engine runs this periodically)
   patients_hours: 24              # C-04
   sessions_days: 30               # C-17

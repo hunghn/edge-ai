@@ -99,16 +99,23 @@ edge-ai/
 │   │   └── publisher.py         # writes kiosk_state, consumes nurse commands, emits outbox events
 │   │
 │   ├── gallery/
-│   │   ├── gallery.py           # load (N,512) float32 matrix + ids from SQLite; hot-reload on version bump
-│   │   └── retention.py         # 24 h TTL purge, apply revocation list
+│   │   ├── gallery.py           # (M5) load (N,512) matrix + ids; hot-reload on version bump
+│   │   └── retention.py         # 24 h TTL purge, revocations, evidence/log TTL, clock guard
 │   │
-│   ├── storage/                 # shared by engine / kiosk / sync
-│   │   ├── db.py                # connect: WAL, busy_timeout, synchronous=NORMAL; migration runner
+│   ├── storage/                 # shared by engine / kiosk / sync — the only SQL in the project
+│   │   ├── db.py                # connect (WAL, busy_timeout, FK), transaction(), migrations
+│   │   ├── clock.py             # epoch-seconds clock, replaceable in tests
 │   │   ├── schema/
-│   │   │   └── 001_init.sql     # tables listed in §4
-│   │   ├── outbox.py            # enqueue / claim batch / mark sent / retry counter
+│   │   │   └── 001_init.sql     # 13 tables; SQLite 3.22-compatible syntax only
+│   │   ├── patients.py          # patients + appointments, accent-insensitive search
+│   │   ├── templates.py         # embeddings BLOB <-> (M,512) gallery matrix, version bump
+│   │   ├── sessions.py          # audit trail of every attempt (no images)
+│   │   ├── outbox.py            # enqueue / claim batch / mark sent / exponential backoff
 │   │   ├── kiosk_ipc.py         # kiosk_state (engine→kiosk), kiosk_commands (kiosk→engine)
-│   │   └── evidence.py          # spoof evidence images + retention
+│   │   ├── operators.py         # nurse PIN: PBKDF2-HMAC-SHA256, lockout
+│   │   ├── evidence.py          # spoof evidence images + retention
+│   │   ├── metrics.py           # per-stage latency samples, written in batches
+│   │   └── models_registry.py   # model bundles staged by sync
 │   │
 │   ├── kiosk/                   # process 3: kiosk UI (PyQt5 from apt, ~250 MB budget)
 │   │   ├── __main__.py

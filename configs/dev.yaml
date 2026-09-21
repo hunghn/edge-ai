@@ -10,3 +10,4 @@ capture:
 
 storage:
   db_path: var/edge.db
+  evidence_dir: var/evidence

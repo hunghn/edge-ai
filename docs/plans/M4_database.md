@@ -1,6 +1,13 @@
 # M4 — Database cục bộ trên Nano (SQLite WAL)
 
-**Trạng thái:** Sẵn sàng làm (mọi giá trị chặn đã chốt) · **Tuần:** 3 · **Phụ thuộc:** M1 · **Cần Nano:** Không
+**Trạng thái:** ✅ Hoàn thành 2026-09-21 · **Tuần:** 3 · **Phụ thuộc:** M1 · **Cần Nano:** Không
+
+> **Kết quả:** 92 unit test pass trên máy dev **và trên chính Nano** (SQLite 3.22, Python 3.6, numpy 1.13),
+> gồm cả test 3 tiến trình ghi đồng thời trong 6 giây không có lỗi `database is locked`.
+> PBKDF2 100 000 vòng trên Nano: **0.095 s** cho mỗi lần verify, nằm trong ngưỡng 0.5 s nên giữ nguyên
+> `auth.pbkdf2_iterations: 100000`.
+> Khác plan: thêm `storage/templates.py` (tách khỏi `patients.py`) và `storage/clock.py`;
+> `gallery/gallery.py` chuyển sang M5 vì nó thuộc S9.
 
 ## 1. Mục tiêu và đầu ra
 - Một file SQLite duy nhất, dùng chung cho 3 tiến trình `engine`, `kiosk` và `sync`, không cần socket hay hàng đợi.
@@ -42,6 +49,7 @@
 | M4-T13 | `gallery/retention.py`: `run_once(now)` xoá BN hết hạn (CASCADE template/appointment), áp revocation, xoá evidence/log/metrics hết hạn, checkpoint WAL, bump gallery version nếu có thay đổi |
 | M4-T14 | `scripts/db_admin.py` (CLI trên Nano): `init`, `create-operator`, `stats`, `purge --dry-run`, `export-sessions --csv` |
 | M4-T15 | Test (§8) |
+| M4-T16 | *(phát sinh)* `tests/unit/test_sql_compat.py`: quét SQL thật (bỏ comment và docstring) để chặn cú pháp mới hơn SQLite 3.22 |
 
 ## 5. Schema (`001_init.sql`)
 ```sql
