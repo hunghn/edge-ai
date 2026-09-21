@@ -1,0 +1,71 @@
+# Every gate/threshold of the S0–S10 pipeline. Code never hardcodes these values.
+# `null` = not decided yet (spec defers to §6 / §6.3 or does not specify). While a
+# match/decision value is null, the engine routes every result to `review_required`.
+
+backend: ort                      # ort (dev) | trt (Nano)
+
+models:
+  dir: models/onnx                # nano.yaml points this at models/engines
+  detector: det_500m
+  landmark: 2d106det
+  recognizer: w600k_mbf
+  antispoof_v2: minifasnet_v2_2.7
+  antispoof_v1se: minifasnet_v1se_4.0
+
+capture:                          # S0
+  source: gstreamer               # gstreamer | file | usb
+  sensor_width: 1920
+  sensor_height: 1080
+  fps: 15                         # spec: 10–15 FPS
+
+detect:                           # S1
+  input_size: [640, 640]          # letterboxed, see models/scrfd.py
+  score_min: 0.6
+  nms_iou: 0.4                    # from reference scrfd.py
+
+subject:                          # S2
+  roi: null                       # TBD: ROI rectangle not given in spec
+  min_side_px: 110                # TBD: coordinate space (640 det input vs 1080p frame)
+
+pose_coarse:                      # S3, from 5 keypoints
+  yaw_max_deg: 25
+  roll_max_deg: 20
+
+antispoof:                        # S4
+  p_real_min: 0.85                # TBD confirm: applied to (softmax_v2 + softmax_v1se) / 2
+  real_class_index: 1             # 0 = print, 1 = real, 2 = replay
+  crops:
+    - model: antispoof_v2
+      scale: 2.7
+    - model: antispoof_v1se
+      scale: 4.0
+  input_size: [80, 80]
+
+landmark:                         # S5
+  input_size: 192
+  bbox_expand: 1.5
+
+pose_fine:                        # S5, solvePnP on 106 landmarks
+  yaw_max_deg: 15
+  pitch_max_deg: 15
+  roll_max_deg: 10
+
+iqa:                              # S5
+  blur_min: 60                    # Laplacian variance
+  lum_min: 60
+  lum_max: 200
+
+best_frame:                       # S8
+  k_max: 5
+  window_s: 1.5
+  min_good: 3
+  quality_score: null             # TBD: formula combining blur/pose/lum
+
+match:                            # S9 — TBD (§6)
+  threshold: null
+  margin_top1_top2: null
+  vote_k: 3
+  vote_n: 5
+
+decision:                         # S10 — TBD (§6.3)
+  rules: null

@@ -1,0 +1,24 @@
+# Jetson Nano 4GB, JetPack 4.6.x: TensorRT FP16 engines built on the device.
+backend: trt
+
+models:
+  dir: models/engines
+
+capture:
+  # Thiết bị thực tế (2026-09-21): webcam USB "UGREEN Camera 2K" trên /dev/video0.
+  # Đo trên máy: MJPG 15 FPS ở cả 1920x1080 và 1280x720; YUYV chỉ 9 FPS -> dùng MJPG.
+  # Nếu sau này đổi sang camera CSI thì dùng lại pipeline nvarguscamerasrc bên dưới.
+  source: gstreamer
+  pipeline: >-
+    v4l2src device=/dev/video0 io-mode=2 !
+    image/jpeg,width=1920,height=1080,framerate=30/1 !
+    jpegdec ! videoconvert ! video/x-raw,format=BGR !
+    appsink drop=true max-buffers=1
+  # pipeline_csi: >-
+  #   nvarguscamerasrc sensor-id=0 !
+  #   video/x-raw(memory:NVMM),width=1920,height=1080,framerate=30/1 !
+  #   nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! video/x-raw,format=BGR !
+  #   appsink drop=true max-buffers=1
+
+storage:
+  db_path: /var/lib/edgeface/edge.db

@@ -1,0 +1,17 @@
+# Dev machine (x86, Python >= 3.8). Install torch CPU with:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch
+numpy
+opencv-python-headless
+PyYAML
+onnx
+onnxruntime
+onnxsim
+scikit-image
+pytest
+vermin
+matplotlib
+scikit-learn
+# needed only to import the reference repo when regenerating tests/fixtures/goldens.npz
+requests
+tqdm
+easydict

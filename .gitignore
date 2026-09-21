@@ -216,3 +216,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ── edge-ai project ───────────────────────────────────────────
+# Models: only models/manifest.yaml is committed
+models/onnx/
+models/engines/
+models/cache/
+
+# Runtime state, datasets, evidence
+*.db
+*.db-wal
+*.db-shm
+data/
+evidence/

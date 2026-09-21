@@ -1,0 +1,6 @@
+# Jetson Nano, JetPack 4.6.x, Python 3.6 (arm64).
+# numpy, opencv (with CUDA) and tensorrt come from JetPack apt packages, not pip.
+# Pins are the last releases that support Python 3.6; validated during M2 bring-up.
+PyYAML==6.0.1
+requests==2.27.1
+pycuda==2021.1

@@ -1,0 +1,12 @@
+# Dev machine (x86): onnxruntime backend, recorded video or USB camera.
+backend: ort
+
+models:
+  dir: models/onnx
+
+capture:
+  source: file
+  path: data/videos/sample.mp4
+
+storage:
+  db_path: var/edge.db
