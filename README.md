@@ -80,10 +80,12 @@ edge-ai/
 │   │   └── arcface.py           # 112×112 RGB, (x−127.5)/127.5, 512-d, L2-normalize
 │   │
 │   ├── pipeline/                # S0–S10 stage logic (one module per stage)
+│   │   ├── base.py              # ok()/fail() so every stage returns StageResult
+│   │   ├── landmark_index.py    # verified 106-landmark index map (see tools/viz)
 │   │   ├── capture.py           # S0  GStreamer nvarguscamerasrc → RingBuffer thread; file/USB sources for dev
 │   │   ├── detect.py            # S1  score gate; 0 faces → IDLE
 │   │   ├── subject.py           # S2  largest bbox, center ∈ ROI, side ≥ min px
-│   │   ├── pose.py              # S3  coarse yaw/roll from 5 kps; S5 solvePnP yaw/pitch/roll from 106 pts
+│   │   ├── pose.py              # S3  coarse yaw/roll from 5 kps; S5 solvePnP (EPNP seed, tz > 0)
 │   │   ├── antispoof.py         # S4  fuse V2(2.7)+V1SE(4.0) softmax sums; p_real + argmax gate
 │   │   ├── quality.py           # S5  Laplacian variance, luminance, quality_score
 │   │   ├── align.py             # S6  similarity transform to ArcFace 5-pt template (arcface_src)
@@ -93,7 +95,8 @@ edge-ai/
 │   │   └── decision.py          # S10 rule engine over S4+S5+S9 → Decision (thresholds from config)
 │   │
 │   ├── engine/                  # process 2: engine
-│   │   ├── __main__.py          # `python3 -m edgeface.engine --config configs/nano.yaml`
+│   │   ├── __main__.py          # (M5) `python3 -m edgeface.engine --config configs/nano.yaml`
+│   │   ├── models.py            # load the five wrappers; refuse engines built from other ONNX
 │   │   ├── loop.py              # per-frame orchestration S1→S10, early-exit on failed gates
 │   │   ├── session.py           # state machine: IDLE → GUIDING → COLLECTING → DECIDED → AWAIT_NURSE → COOLDOWN
 │   │   └── publisher.py         # writes kiosk_state, consumes nurse commands, emits outbox events

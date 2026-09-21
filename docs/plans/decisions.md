@@ -40,7 +40,7 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | D-07 | S2 | `min_side_px = 110` đo trên ảnh 640×640 hay khung gốc? | Cần chốt; ảnh hưởng khoảng cách đứng | M3 |
 | D-08 | S8 | Công thức `quality_score` | Xem các phương án trong `stages/S8_best_frame.md` | M3 |
 | D-09 | S6 | Nguồn 5 điểm căn chỉnh: kps SCRFD hay 5 điểm rút từ 106 | Kps SCRFD (khớp cách ArcFace được huấn luyện) | M3 |
-| D-10 | S5 | Nội tham số camera cho solvePnP: xấp xỉ (f = chiều rộng ảnh) hay hiệu chuẩn checkerboard | Xấp xỉ trước, hiệu chuẩn nếu sai số pose lớn | M3 |
+| D-10 | S5 | Nội tham số camera cho solvePnP: xấp xỉ (f = chiều rộng ảnh) hay hiệu chuẩn checkerboard | **Ưu tiên cao sau M3**: với f xấp xỉ, ảnh chính diện đo ra pitch −17° và bị gate ±15° loại oan (xem `results/M3_pipeline_perf.md` §3.2). Cần hiệu chuẩn camera kiosk hoặc đo độ lệch nền rồi chốt lại ngưỡng | M9 |
 | D-11 | S5 | Định nghĩa vùng tính blur/luminance (crop nào, resize về kích thước nào) | Crop mặt đã căn chỉnh 112×112, ảnh xám | M3 |
 | D-15 | S3 | Cách quy đổi tỉ lệ hình học 5 điểm sang độ (yaw) | Công thức trong `stages/S3_coarse_pose.md`, kiểm chứng bằng solvePnP | M3 |
 | D-17 | S9 | Cách hiểu luật "3-of-5": ≥ 3 frame bầu cùng một BN, áp dụng cả khi chỉ có 3–4 frame | Như mô tả trong `stages/S9_match.md` §3.2 | M5 |

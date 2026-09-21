@@ -71,12 +71,27 @@ def validate(cfg):
         raise ValueError("config match.vote_k must be <= match.vote_n")
 
 
+PACKAGED_CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "..", "..", "configs")
+
+
+def default_config_path(path=None):
+    """default.yaml next to `path`, falling back to the project's configs/default.yaml.
+
+    An override file may live anywhere (a scratch directory, /etc), and it still has to
+    merge on top of the project defaults rather than stand alone.
+    """
+    if path:
+        sibling = os.path.join(os.path.dirname(os.path.abspath(path)), "default.yaml")
+        if os.path.exists(sibling):
+            return sibling
+    return os.path.abspath(os.path.join(PACKAGED_CONFIG_DIR, "default.yaml"))
+
+
 def load_config(path=None, default_path=None):
     """Load default.yaml (next to `path` unless given) and deep-merge `path` on top."""
     if default_path is None:
-        base_dir = os.path.dirname(os.path.abspath(path)) if path else os.path.join(
-            os.path.dirname(__file__), "..", "..", "configs")
-        default_path = os.path.join(base_dir, "default.yaml")
+        default_path = default_config_path(path)
     data = _read_yaml(default_path)
     if path and os.path.abspath(path) != os.path.abspath(default_path):
         data = _deep_merge(data, _read_yaml(path))

@@ -1,6 +1,11 @@
 # M3 — Pipeline S0–S8 + engine loop + chạy video offline
 
-**Trạng thái:** Chưa bắt đầu · **Tuần:** 3 · **Phụ thuộc:** M1 (chạy x86), M2 (chạy Nano) · **Cần Nano:** Một phần
+**Trạng thái:** ✅ Hoàn thành 2026-09-21 · **Tuần:** 3 · **Phụ thuộc:** M1, M2 · **Cần Nano:** Một phần
+
+> **Kết quả:** [`docs/results/M3_pipeline_perf.md`](../results/M3_pipeline_perf.md).
+> 150 unit test pass trên x86 và trên Nano. Pipeline chạy trên Nano với TensorRT: e2e p50 96.3 ms (≈10.4 FPS, chưa `jetson_clocks`).
+> Hai phát hiện phải xử lý tiếp: solvePnP trả nghiệm phản chiếu (đã sửa bằng EPNP + kiểm tra tz > 0) và mô hình 3D trung bình gây lệch pitch ~17° (nâng **D-10** lên mức ưu tiên).
+> Khác plan: thêm `pipeline/landmark_index.py` + `tools/viz/landmark_index.py` (kiểm chứng chỉ số landmark), thêm mốc đo `S5_landmark`, và `config.load_config` nay lùi về `configs/default.yaml` khi file override nằm ngoài thư mục `configs/`.
 
 ## 1. Mục tiêu và đầu ra
 - Hiện thực stage S0–S8, mỗi stage là hàm thuần trả về `StageResult`.

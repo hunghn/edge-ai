@@ -1,4 +1,5 @@
 """Per-stage latency recording. time.monotonic() based, in-process."""
+import contextlib
 import functools
 import threading
 import time
@@ -45,6 +46,16 @@ class LatencyRecorder(object):
 
 
 RECORDER = LatencyRecorder()
+
+
+@contextlib.contextmanager
+def timer(stage, recorder=None):
+    """Time a block that is not a whole function, e.g. one model call inside a stage."""
+    t0 = now()
+    try:
+        yield
+    finally:
+        (recorder or RECORDER).add(stage, (now() - t0) * 1000.0)
 
 
 def timed(stage, recorder=None):

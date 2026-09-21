@@ -14,9 +14,12 @@ models:
 
 capture:                          # S0
   source: gstreamer               # gstreamer | file | usb
-  sensor_width: 1920
-  sensor_height: 1080
-  fps: 15                         # spec: 10–15 FPS
+  width: 1920                     # C-13: keep 1080p in the ring buffer
+  height: 1080
+  fps: 15                         # spec: 10–15 FPS; only paces `file` sources
+  fourcc: MJPG                    # USB webcam: MJPG gives 15 FPS, YUYV only 9
+  read_fail_max: 30               # consecutive failed reads before reopening the camera
+  reconnect_s: 2.0
 
 detect:                           # S1
   input_size: [640, 640]          # letterboxed, see models/scrfd.py
@@ -24,12 +27,14 @@ detect:                           # S1
   nms_iou: 0.4                    # from reference scrfd.py
 
 subject:                          # S2
-  roi: null                       # TBD: ROI rectangle not given in spec
-  min_side_px: 110                # TBD: coordinate space (640 det input vs 1080p frame)
+  roi: null                       # TBD (D-06): [x1, y1, x2, y2] as fractions of the frame
+  min_side_px: 110
+  min_side_space: det             # TBD (D-07): 'det' = 640x640 input, 'frame' = full frame
 
 pose_coarse:                      # S3, from 5 keypoints
   yaw_max_deg: 25
   roll_max_deg: 20
+  k_yaw: null                     # TBD (D-15): nose-offset -> degrees; null gates roll only
 
 antispoof:                        # S4
   p_real_min: 0.85                # TBD confirm: applied to (softmax_v2 + softmax_v1se) / 2
@@ -55,16 +60,32 @@ pose_fine:                        # S5, solvePnP on 106 landmarks
   pitch_max_deg: 15
   roll_max_deg: 10
 
-iqa:                              # S5
-  blur_min: 60                    # Laplacian variance
+iqa:                              # S5 — thresholds only mean something with a fixed
+  blur_min: 60                    # measurement area (D-11), hence crop_shrink/crop_size
   lum_min: 60
   lum_max: 200
+  crop_shrink: 0.8                # face box shrunk to drop background
+  crop_size: 112                  # resized to this square before measuring
+
+camera:                           # S5 solvePnP intrinsics (D-10)
+  K: null                         # null -> approximated as f = image width
+  dist: null
+
+align:                            # S6
+  image_size: 112
+  kps_source: scrfd               # TBD (D-09): scrfd | lmk106
+  max_residual_px: null           # null -> no sanity check on the 5-point fit
 
 best_frame:                       # S8
   k_max: 5
   window_s: 1.5
   min_good: 3
-  quality_score: null             # TBD: formula combining blur/pose/lum
+  quality_score: null             # TBD (D-08): A | B | C; null keeps frames FIFO
+  quality_params: {}
+  continuity:                     # TBD (D-31): keep one person per collection window
+    iou_min: null
+    max_gap_s: null
+    cos_min: null
 
 match:                            # S9 — TBD (§6)
   threshold: null
