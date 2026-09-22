@@ -140,9 +140,11 @@ celerybeat.pid
 mnesia/
 rabbitmq/
 rabbitmq-data/
+results/
 
 # ActiveMQ
 activemq-data/
+results/
 
 # SageMath parsed files
 *.sage.py
@@ -222,10 +224,12 @@ __marimo__/
 models/onnx/
 models/engines/
 models/cache/
+models/cascades/
 
 # Runtime state, datasets, evidence
 *.db
 *.db-wal
 *.db-shm
 data/
+results/
 evidence/

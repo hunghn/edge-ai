@@ -1,0 +1,7 @@
+# Config for exercising the evaluation tooling on synthetic clips (M8/M9 plumbing only).
+# The relaxed pose gate is for the warped fixture face, NOT a proposal for the kiosk.
+backend: ort
+models: {dir: models/onnx}
+storage: {db_path: var/eval.db, evidence_dir: var/evidence}
+pose_fine: {yaw_max_deg: 25, pitch_max_deg: 25, roll_max_deg: 20}
+best_frame: {quality_score: A}

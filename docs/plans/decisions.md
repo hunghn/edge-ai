@@ -28,6 +28,7 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | C-20 | D-30 — luật spoof cấp phiên | **≥ 2 frame** bị S4 chặn trong cửa sổ thu thập thì kết luận `spoof_suspect` (`decision.spoof_min_frames`) | 2026-09-22 | Người dùng |
 | C-21 | D-21 — mốc thời gian phiên | Chờ điều dưỡng **30 s**, nghỉ giữa hai lượt **3 s**, màn quản trị tự khoá sau **60 s** | 2026-09-22 | Người dùng |
 | C-22 | D-20 — enrollment | **Tự động chụp 5 mẫu**; nếu trùng khuôn mặt với BN khác thì **cảnh báo rồi vẫn cho lưu** sau khi điều dưỡng xác nhận lần hai | 2026-09-22 | Người dùng |
+| C-23 | D-27 — nguồn LBPH | **Tự viết bằng numpy** (`baselines/haar_lbph/lbph.py`). Nano không có `cv2.face`, pip không có wheel aarch64/py3.6 (chỉ có mã nguồn 154 MB của OpenCV 5). Có 10 test đối chứng với `cv2.face` trên máy dev | 2026-09-22 | Kiểm chứng ở M8 |
 | C-19 | Quy trình đo hiệu năng | Trước mỗi lần đo: `sudo jetson_clocks` (không tự áp dụng lại sau reboot). Engine **phải build lúc máy rảnh** — build lúc tải nặng làm TensorRT chọn tactic chậm hơn (ArcFace 18.08 ms so với 14.24 ms) | 2026-09-21 | Đo ở M2/M3 |
 | C-15 | D-16 — gộp 2 MiniFASNet | **Không gộp**, giữ 5 engine riêng: cả 5 engine chỉ tốn 1024 MB RSS so với ngân sách 2.0–2.6 GB | 2026-09-21 | Đo ở M2 |
 
@@ -59,6 +60,5 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | D-24 | Sync | Cơ chế ký model bundle | HMAC-SHA256 bằng khoá chung (stdlib) | M7 |
 | D-25 | Kiosk | Kích thước và độ phân giải màn hình cảm ứng | Cần chốt | M6 |
 | D-26 | Sync | Chu kỳ kéo gallery/revocation | Cần chốt | M7 |
-| D-27 | Baseline | LBPH: build OpenCV contrib trên Nano hay tự viết LBPH bằng numpy | Kiểm tra wheel aarch64 trước; nếu không có thì tự viết | M8 |
 | D-28 | Dataset | Số người tham gia, số phiên, loại tấn công (PAI), mẫu phiếu đồng ý | Xem `M8_baseline_dataset.md` | M8 |
 | D-29 | Server | Tài khoản web quản trị: 1 admin cố định hay nhiều tài khoản | 1 admin + đổi mật khẩu | M7 |

@@ -1,0 +1,15 @@
+# Haar + LBPH baseline (M8). Runs on the same device, camera and metrics as the main
+# pipeline, so the comparison in M9 is method vs method.
+backend: ort                      # unused by the baseline; kept so the config validates
+
+baseline:
+  cascade_path: null              # null -> found automatically (JetPack or cv2.data)
+  scale_factor: 1.1
+  min_neighbors: 5
+  min_face_px: 60
+  chip_size: 128                  # LBPH input; fixed so histograms stay comparable
+  radius: 1
+  neighbors: 8
+  grid: 8
+  threshold: null                 # null -> always report the nearest match; M9 calibrates
+  model_path: var/baseline_lbph.npz

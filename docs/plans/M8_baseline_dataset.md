@@ -1,6 +1,11 @@
 # M8 — Baseline Haar+LBPH và thu thập dataset
 
-**Trạng thái:** Chưa bắt đầu · **Tuần:** 3–5 (thu dữ liệu có thể bắt đầu sớm) · **Phụ thuộc:** M2 (thiết bị), M3 (pipeline để ghi dữ liệu) · **Cần Nano:** Có
+**Trạng thái:** ✅ Phần công cụ hoàn thành 2026-09-22 · thu dữ liệu chờ duyệt D-28 · **Cần Nano:** Có
+
+> **Kết quả:** [`docs/results/M8_baseline.md`](../results/M8_baseline.md).
+> D-27 chốt: tự viết LBPH bằng numpy (C-23), có 10 test đối chứng `cv2.face`.
+> Đo trên Nano: baseline **221 ms/frame (4.4 FPS)** so với pipeline chính 89 ms (11.2 FPS) — chậm hơn 2.5 lần vì Haar chạy CPU còn OpenCV của JetPack không có CUDA.
+> Giao thức thu thập và phiếu đồng ý đã soạn, **chờ duyệt D-28 trước khi quay**.
 
 ## 1. Mục tiêu và đầu ra
 - **Baseline cổ điển** Haar cascade + LBPH chạy **trên cùng Nano, cùng nguồn camera, cùng bộ đo latency/RAM/công suất**. Đây là yêu cầu của spec.
