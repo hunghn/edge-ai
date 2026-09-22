@@ -50,9 +50,9 @@ Có test cho cả bốn kiểu hỏng: sai sha256, sai chữ ký, thiếu manife
 **Chưa làm / cần bạn quyết:**
 - **HTTPS bắt buộc:** hiện có hướng dẫn chứng chỉ tự ký + ghim CA, nhưng chưa có cơ chế ép HTTPS. Dữ liệu là embedding khuôn mặt nên **không được chạy HTTP trần với bệnh nhân thật**.
 - **D-22:** thời gian giữ embedding và log trên server — chưa chốt, hiện giữ vô thời hạn.
-- **Thử nghiệm giữa hai máy thật chưa chạy:** máy dev là WSL2 (NAT) nên Nano chưa kết nối tới được. Cần một PC trong LAN; các test tích hợp hiện chạy cả hai phía trên cùng một máy.
+- **Thử nghiệm giữa hai máy: đã chạy** qua đường hầm ngược SSH (xem [`M7_wsl_nano_link.md`](M7_wsl_nano_link.md)). Đây là cách dùng cho phát triển; triển khai thật cần server trên một PC trong LAN.
 
 ## 6. Còn lại
-- Chạy thử Nano ↔ server trên LAN thật (cần PC/laptop).
+- Chạy thử trên LAN thật với server đặt ở một PC (hiện mới chạy qua đường hầm SSH từ WSL).
 - Chốt D-22 và D-29 (tài khoản quản trị).
 - `passlib` đã bị loại khỏi phụ thuộc: bản `bcrypt` 4.x làm nó lỗi ngay khi khởi tạo; dùng PBKDF2 của thư viện chuẩn, cùng cách với PIN trên thiết bị.
