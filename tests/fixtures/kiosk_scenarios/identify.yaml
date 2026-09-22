@@ -1,0 +1,14 @@
+name: Nhận dạng thành công
+patients:
+  - {patient_code: BN001, full_name: "Nguyễn Thị Hà", birth_year: 1990, appointment_code: AP001}
+steps:
+  - {state: IDLE, hold: 1.0}
+  - {state: GUIDING, guidance: NO_FACE, hold: 0.8}
+  - {state: GUIDING, guidance: STEP_CLOSER, hold: 1.2}
+  - {state: GUIDING, guidance: LOOK_STRAIGHT, hold: 1.0}
+  - {state: COLLECTING, hold: 1.2}
+  - {state: AWAIT_NURSE, hold: 4.0,
+     payload: {decision: review_required, rule_id: R3,
+               candidate: {code: BN001, score: 0.81, margin: 0.22, votes: 5, k: 5}}}
+  - {state: COOLDOWN, hold: 1.0}
+  - {state: IDLE, hold: 0.5}

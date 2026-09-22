@@ -121,10 +121,15 @@ edge-ai/
 │   │   ├── metrics.py           # per-stage latency samples, written in batches
 │   │   └── models_registry.py   # model bundles staged by sync
 │   │
-│   ├── kiosk/                   # process 3: kiosk UI (PyQt5 from apt, ~250 MB budget)
+│   ├── kiosk/                   # process 3: kiosk UI (PyQt5 from apt; measured 59 MB)
 │   │   ├── __main__.py
-│   │   ├── window.py            # preview, guidance text ("step closer", "look straight"), candidate card
-│   │   └── controller.py        # polls kiosk_state, writes confirm/reject/retry commands
+│   │   ├── strings.py           # every Vietnamese string, one place
+│   │   ├── view_model.py        # engine state → screen, words, buttons (no Qt)
+│   │   ├── controller.py        # polls kiosk_state, writes commands, PIN gate (no Qt)
+│   │   ├── auth.py              # admin PIN + inactivity lock
+│   │   ├── window.py            # QStackedWidget over the pages; draws only
+│   │   ├── style.qss
+│   │   └── widgets/             # numpad, camera preview with ROI outline
 │   │
 │   ├── sync/                    # process 4: sync (~80 MB budget)
 │   │   ├── __main__.py

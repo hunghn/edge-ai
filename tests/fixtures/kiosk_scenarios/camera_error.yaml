@@ -1,0 +1,5 @@
+name: Camera gặp sự cố
+steps:
+  - {state: GUIDING, guidance: STEP_CLOSER, hold: 0.5}
+  - {state: CAMERA_ERROR, hold: 3.0}
+  - {state: IDLE, hold: 0.5}

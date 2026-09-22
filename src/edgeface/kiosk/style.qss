@@ -1,0 +1,25 @@
+/* Kiosk styling: large type, high contrast, touch-sized targets. */
+QWidget { background: #10141b; color: #f2f5fa; font-family: "DejaVu Sans"; }
+QLabel#title { font-size: 40px; font-weight: 600; }
+QLabel#message { font-size: 30px; color: #d7deea; }
+QLabel#fieldLabel { font-size: 22px; color: #8e9bb3; }
+QLabel#fieldValue { font-size: 30px; font-weight: 600; }
+QLabel#countdown { font-size: 22px; color: #8e9bb3; }
+QLabel#preview { background: #05070a; border: 2px solid #253044; border-radius: 12px; }
+QLabel#banner { font-size: 26px; font-weight: 600; padding: 14px; border-radius: 10px; }
+QLabel#banner[severity="ok"] { background: #12351f; color: #7ee0a2; }
+QLabel#banner[severity="attention"] { background: #3a2f10; color: #f0c674; }
+QLabel#banner[severity="alarm"] { background: #3d1417; color: #ff8b8b; }
+QPushButton { font-size: 26px; min-height: 72px; padding: 0 28px; border-radius: 10px;
+              background: #1d2735; color: #f2f5fa; border: 1px solid #2c3a4f; }
+QPushButton:pressed { background: #26344a; }
+QPushButton#primary { background: #1f6f43; border-color: #2f8f5b; font-weight: 600; }
+QPushButton#primary:pressed { background: #298852; }
+QPushButton#danger { background: #6b2126; border-color: #8c2b31; }
+QPushButton#keypad { font-size: 30px; min-width: 96px; min-height: 84px; }
+QLineEdit { font-size: 28px; padding: 12px; border-radius: 8px; background: #172030;
+            border: 1px solid #2c3a4f; color: #f2f5fa; }
+QListWidget { font-size: 24px; background: #172030; border: 1px solid #2c3a4f;
+              border-radius: 8px; }
+QListWidget::item { padding: 14px; }
+QListWidget::item:selected { background: #24405f; }

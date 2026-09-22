@@ -1,0 +1,8 @@
+name: Nghi ngờ giả mạo
+steps:
+  - {state: GUIDING, guidance: STEP_CLOSER, hold: 0.8}
+  - {state: COLLECTING, hold: 0.8}
+  - {state: AWAIT_NURSE, hold: 4.0,
+     payload: {decision: spoof_suspect, rule_id: R1,
+               candidate: {code: BN001, score: 0.9, margin: 0.3, votes: 5, k: 5}}}
+  - {state: IDLE, hold: 0.5}

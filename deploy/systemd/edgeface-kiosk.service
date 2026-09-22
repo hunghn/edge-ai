@@ -1,0 +1,26 @@
+# Kiosk UI. Runs inside the graphical session, so it needs the user's display.
+#   sudo cp deploy/systemd/edgeface-kiosk.service /etc/systemd/system/
+#   sudo systemctl enable --now edgeface-kiosk
+[Unit]
+Description=edgeface kiosk (touchscreen UI)
+After=graphical.target edgeface-engine.service
+Wants=edgeface-engine.service
+
+[Service]
+Type=simple
+User=js
+Group=js
+WorkingDirectory=/home/js/edge-ai
+Environment=PYTHONPATH=/home/js/edge-ai/src
+Environment=DISPLAY=:0
+Environment=QT_QPA_PLATFORM=xcb
+# The kiosk only reads state and writes commands; it never loads a model.
+Environment=EDGEFACE_LOG_LEVEL=INFO
+ExecStart=/usr/bin/python3 -m edgeface.kiosk --config /home/js/edge-ai/configs/nano.yaml
+Restart=always
+RestartSec=3
+# Budget from the spec is ~250 MB.
+MemoryMax=400M
+
+[Install]
+WantedBy=graphical.target

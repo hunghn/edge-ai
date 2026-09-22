@@ -28,6 +28,7 @@ class Publisher(object):
         self.preview_width = int(kiosk_cfg.get("preview_width", 480))
         self.preview_period = 1.0 / float(kiosk_cfg.get("preview_fps", 5) or 5)
         self._last_key = None
+        self._last_args = None
         self._last_publish = 0.0
         self._last_preview = 0.0
 
@@ -42,8 +43,21 @@ class Publisher(object):
         with transaction(self.conn):
             seq = kiosk_ipc.publish_state(self.conn, state, guidance, session_id, payload, now)
         self._last_key = key
+        self._last_args = (state, guidance, session_id, payload)
         self._last_publish = now
         return seq
+
+    def heartbeat(self, now=None):
+        """Re-publish the current state so the kiosk can tell the engine is alive.
+
+        Without this the row goes stale while the nurse thinks (up to 30 s, C-21) and the
+        kiosk would show "engine down" after five seconds. Debouncing keeps it to one
+        write every HEARTBEAT_S.
+        """
+        if self._last_args is None:
+            return None
+        state, guidance, session_id, payload = self._last_args
+        return self.publish(state, guidance, session_id, payload, now)
 
     def write_preview(self, image, now=None):
         """Downscaled JPEG for the kiosk: temp file then rename, so no torn reads."""

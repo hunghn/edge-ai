@@ -1,0 +1,6 @@
+name: Ảnh không đạt chất lượng
+steps:
+  - {state: GUIDING, guidance: TOO_DARK, hold: 1.0}
+  - {state: GUIDING, guidance: HOLD_STILL, hold: 1.0}
+  - {state: AWAIT_NURSE, hold: 3.0, payload: {decision: low_quality, rule_id: R2}}
+  - {state: IDLE, hold: 0.5}

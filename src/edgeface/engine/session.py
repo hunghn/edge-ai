@@ -188,10 +188,13 @@ class Session(object):
         if decision_result.decision is Decision.SPOOF_SUSPECT:
             actions.append(Action(SAVE_EVIDENCE, {"session_id": self.session_id}))
         self._enter(AWAIT_NURSE, now)
-        actions.append(Action(PUBLISH, {"state": AWAIT_NURSE,
-                                        "decision": decision_result.decision.value,
-                                        "rule_id": decision_result.rule_id,
-                                        "candidate": decision_result.candidate}))
+        actions.append(Action(PUBLISH, {
+            "state": AWAIT_NURSE,
+            "decision": decision_result.decision.value,
+            "rule_id": decision_result.rule_id,
+            "candidate": decision_result.candidate,
+            # Absolute deadline so the kiosk can count down without its own timer.
+            "timeout_at": now + self.cfg["session"]["await_nurse_timeout_s"]}))
         return actions
 
     def on_command(self, command, now):

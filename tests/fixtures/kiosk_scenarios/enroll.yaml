@@ -1,0 +1,9 @@
+name: Đăng ký bệnh nhân mới
+steps:
+  - {state: ENROLL_GUIDING, guidance: STEP_CLOSER, hold: 1.0, payload: {progress: 0, total: 5}}
+  - {state: ENROLL_COLLECTING, hold: 1.0, payload: {progress: 2, total: 5}}
+  - {state: ENROLL_COLLECTING, hold: 1.0, payload: {progress: 4, total: 5}}
+  - {state: ENROLL_REVIEW, hold: 4.0,
+     payload: {n_templates: 5, warnings: [duplicate_unknown_threshold], duplicate_code: BN001,
+               self_consistency: 0.97}}
+  - {state: COOLDOWN, hold: 1.0}

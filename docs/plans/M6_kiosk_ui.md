@@ -1,6 +1,11 @@
 # M6 — Giao diện kiosk (PyQt5, màn hình cảm ứng dùng chung)
 
-**Trạng thái:** Chưa bắt đầu · **Tuần:** 4 · **Phụ thuộc:** M4 (có thể làm song song với M5 nhờ `fake_engine`) · **Cần Nano:** Không
+**Trạng thái:** ✅ Hoàn thành 2026-09-22 · **Tuần:** 4 · **Phụ thuộc:** M4 · **Cần Nano:** Không
+
+> **Kết quả:** [`docs/results/M6_kiosk.md`](../results/M6_kiosk.md) + ảnh màn hình trong `docs/figures/kiosk/`.
+> 237 test pass trên Nano (228 unit + 9 UI offscreen), RAM kiosk **59 MB** so với ngân sách 250 MB.
+> Phát hiện: engine không ghi gì trong lúc chờ điều dưỡng nên kiosk tưởng engine chết sau 5 giây → đã thêm nhịp tim 0.5 s và mốc `timeout_at`.
+> Khác plan: gộp `widgets/countdown` vào `Page`; bàn phím tiếng Việt hoãn tới khi chốt D-25.
 
 ## 1. Mục tiêu và đầu ra
 - Tiến trình `kiosk` riêng: `python3 -m edgeface.kiosk --config configs/<env>.yaml`, full-screen, tiếng Việt, RAM ≤ ~250 MB.

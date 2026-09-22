@@ -254,6 +254,8 @@ class Engine(object):
                     self.worst_spoof_frame = (frame, outcome.obs.det)
             self._execute(self.session.on_frame(outcome, frame.ts), frame.ts)
 
+        self.publisher.heartbeat(now)     # prove the engine is alive even while waiting
+
         for command in self.publisher.claim_commands(now) + self._auto_command():
             self._execute(self.session.on_command(command, clock.now()), clock.now())
         self._execute(self.session.on_tick(clock.now()), clock.now())
