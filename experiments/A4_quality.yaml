@@ -1,0 +1,19 @@
+name: "A4 — Công thức quality_score nào tốt nhất (D-08)?"
+question: "S8 giữ lại 5 frame tốt nhất theo quality_score. Ba công thức A/B/C đã cài sẵn;
+  biến thể fifo là khi để null (giữ frame đến trước)."
+config: configs/eval_synthetic.yaml
+gallery_db: var/eval.db
+probes: ["data/synthetic/probe/*.mp4"]
+variants:
+  - name: fifo
+    note: "quality_score = null"
+    config_override: {best_frame: {quality_score: null}}
+  - name: formula_A
+    note: "det × pose × blur"
+    config_override: {best_frame: {quality_score: A}}
+  - name: formula_B
+    note: "tổng có trọng số"
+    config_override: {best_frame: {quality_score: B}}
+  - name: formula_C
+    note: "chuẩn ArcFace"
+    config_override: {best_frame: {quality_score: C}}

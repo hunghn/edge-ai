@@ -1,6 +1,11 @@
 # M9 — Hiệu chuẩn ngưỡng, đánh giá, ablation và báo cáo
 
-**Trạng thái:** Chưa bắt đầu · **Tuần:** 6–7 · **Phụ thuộc:** M5, M6, M7 (hệ thống chạy end-to-end), M8 (dataset + baseline) · **Cần Nano:** Có
+**Trạng thái:** ✅ Công cụ hoàn thành 2026-09-22 · số liệu chờ dataset (D-28) · **Cần Nano:** Có
+
+> **Kết quả:** [`docs/results/M9_evaluation_tools.md`](../results/M9_evaluation_tools.md).
+> 8 công cụ + 22 test trên dữ liệu có đáp án biết trước. Chạy thử trọn chuỗi trên clip tổng hợp: gallery → 72 dòng so sánh → metric → ROC/DET → ablation.
+> `calibrate.py` **từ chối** chạy trên tập test và chỉ ghi đề xuất, không tự sửa config.
+> Kịch bản demo: [`docs/demo_script.md`](../demo_script.md).
 
 ## 1. Mục tiêu và đầu ra
 - **Bộ ngưỡng có luận cứ** cho các mục đang `null` (D-01, D-02, D-04 `no_match_below`, và D-05/D-08/D-15 nếu đưa vào hiệu chuẩn), được **người dùng duyệt** trước khi ghi vào `configs/default.yaml`.

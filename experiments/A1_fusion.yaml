@@ -1,0 +1,21 @@
+name: "A1 — Gộp hai MiniFASNet có đáng không?"
+question: "Spec dùng cả MiniFASNetV2 (crop 2.7) và V1SE (crop 4.0). Mỗi model tốn ~6 ms
+  trên Nano. Chạy riêng từng model so với gộp cả hai, trên cùng probe và cùng gallery."
+config: configs/eval_synthetic.yaml
+gallery_db: var/eval.db
+probes: ["data/synthetic/probe/*.mp4"]
+variants:
+  - name: both
+    note: "theo spec"
+  - name: v2_only
+    note: "chỉ crop 2.7"
+    config_override:
+      antispoof:
+        crops:
+          - {model: antispoof_v2, scale: 2.7}
+  - name: v1se_only
+    note: "chỉ crop 4.0"
+    config_override:
+      antispoof:
+        crops:
+          - {model: antispoof_v1se, scale: 4.0}

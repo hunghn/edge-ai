@@ -1,0 +1,12 @@
+name: "A6 — Gộp template bằng max hay mean (D-03)?"
+question: "Mỗi bệnh nhân có 5 template. S9 gộp điểm của chúng thành một điểm cho bệnh nhân."
+config: configs/eval_synthetic.yaml
+gallery_db: var/eval.db
+probes: ["data/synthetic/probe/*.mp4"]
+variants:
+  - name: max
+    note: "mặc định"
+    config_override: {match: {template_agg: max}}
+  - name: mean
+    note: ""
+    config_override: {match: {template_agg: mean}}

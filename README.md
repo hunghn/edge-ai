@@ -143,9 +143,11 @@ edge-ai/
 │       └── tegrastats.py        # parse tegrastats: RAM, per-core CPU, GPU, power rails
 │
 ├── baselines/
-│   └── haar_lbph/               # Haar cascade + LBPH on the same device, same capture + metrics
+│   └── haar_lbph/               # Haar cascade + LBPH on the same device, same metrics
+│       ├── detector.py          # Haar cascade + fixed-size grayscale chips
+│       ├── lbph.py              # LBPH in numpy; cv2.face does not exist on JetPack (C-23)
 │       ├── enroll.py
-│       └── run.py               # needs cv2.face (opencv-contrib) — see open questions
+│       └── run.py
 │
 ├── scripts/                     # ── ON-DEVICE shell/py3.6 helpers ──────────────────────
 │   ├── setup_nano.sh            # apt deps, pycuda build, swap/zram, power mode (nvpmodel), jetson_clocks
@@ -161,14 +163,20 @@ edge-ai/
 │   │   ├── fetch_insightface.py     # download det_500m / 2d106det / w600k_mbf, write sha256 to manifest
 │   │   └── onnx_parity.py           # pth vs onnx, onnx(FP32) vs engine(FP16) dumps
 │   ├── dataset/
-│   │   ├── record.py            # capture sessions, consent id tagging
-│   │   └── build_gallery.py     # enroll images → embeddings → gallery DB for local testing
+│   │   ├── record.py            # capture sessions on the kiosk, prompts the scenario matrix
+│   │   ├── split.py             # dev/test split BY PERSON, fixed seed
+│   │   ├── build_gallery.py     # enrol clips → gallery DB through the real kiosk path
+│   │   ├── extract_scores.py    # probes → every comparison pair (not just top-1)
+│   │   └── make_synthetic_clips.py  # fake clips to exercise the tooling without people
 │   └── eval/
-│       ├── recognition.py       # TAR@FAR=1e-3/1e-4, FRR, Rank-1, ROC/DET
-│       ├── antispoof.py         # APCER / BPCER / ACER (ISO/IEC 30107-3)
-│       ├── calibrate.py         # propose S4/S9/S10 thresholds from score dumps (for user sign-off)
+│       ├── recognition.py       # TAR@FAR, FRR, Rank-1, EER, ROC
+│       ├── antispoof.py         # APCER (worst species), BPCER, ACER, PAD curve
+│       ├── bootstrap.py         # confidence intervals, resampling PEOPLE not comparisons
+│       ├── calibrate.py         # proposes thresholds from dev; refuses to touch test
+│       ├── plots.py             # ROC, DET (normal deviate), PAD
+│       ├── run_matrix.py        # ablations: same data, one setting changed
 │       ├── ops_report.py        # review_required rate, low_quality rate, attempts per success
-│       └── perf_report.py       # latency/FPS/RAM/CPU/power tables from metrics DB + tegrastats
+│       └── perf_report.py       # latency table from the device's own stage_latency rows
 │
 ├── deploy/
 │   └── systemd/
