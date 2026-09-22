@@ -3,20 +3,56 @@
 WSL2 mặc định nằm sau NAT: nó ra Internet được, nhưng thiết bị khác trong LAN **không**
 gọi ngược vào được. Dưới đây là ba cách, xếp theo thứ tự nên dùng.
 
-## Cách 1 — Đường hầm ngược qua SSH (đã kiểm chứng, không cần quyền admin)
+## Cách 1 — Đường hầm ngược qua SSH (đã tự động hoá, không cần quyền admin)
 
 Dùng chính kết nối SSH sẵn có. Server nghe ở `127.0.0.1` trong WSL, cổng 8000 trên Nano
 được chuyển tiếp về đó.
 
+### Dùng script (khuyến nghị)
+
 ```bash
-# trên WSL: chạy server
+scripts/dev_link.sh up        # cài + chạy tất cả, cả hai máy
+scripts/dev_link.sh status    # xem gì đang chạy ở đâu
+scripts/dev_link.sh check     # chạy một chu kỳ sync trên Nano rồi báo kết quả
+scripts/dev_link.sh logs      # xem log server + đường hầm
+scripts/dev_link.sh down      # dừng (không gỡ cài đặt)
+```
+
+`up` làm những việc sau, và chạy lại nhiều lần cũng không sao:
+
+| Máy | Việc |
+|---|---|
+| WSL | tạo `~/.config/edgeface/server.env` (DB, khoá secret ngẫu nhiên) nếu chưa có |
+| WSL | cài 2 systemd **user service**: `edgeface-server` (uvicorn) và `edgeface-tunnel` (ssh −R), cả hai `Restart=always` |
+| WSL | tạo thiết bị trên server và lấy token — **chỉ khi Nano chưa có token** |
+| Nano | ghi `~/.config/edgeface/sync.env` (quyền 600) và `~/sync_nano.yaml` |
+| Nano | cài + chạy user service `edgeface-sync` |
+
+Token không bao giờ được in ra màn hình hay ghi vào log: script chuyển thẳng sang Nano
+và đặt quyền 600.
+
+Biến môi trường để đổi mặc định: `EDGEFACE_NANO_HOST` (mặc định `nano`),
+`EDGEFACE_PORT` (8000), `EDGEFACE_DEVICE_ID` (kiosk-01).
+
+Tạo tài khoản quản trị (một lần):
+```bash
+set -a; . ~/.config/edgeface/server.env; set +a
+.venv/bin/python -m server.cli create-admin --username admin
+```
+rồi mở `http://127.0.0.1:8000/admin/`.
+
+**Dịch vụ dừng khi bạn đăng xuất**, trừ khi bật lingering (cần sudo, chạy một lần):
+```bash
+sudo loginctl enable-linger $USER                  # trên WSL
+ssh nano 'sudo loginctl enable-linger $USER'       # trên Nano
+```
+
+### Làm bằng tay (nếu không dùng script)
+
+```bash
 uvicorn server.app:app --host 127.0.0.1 --port 8000
-
-# mở đường hầm (giữ chạy nền); -N = không chạy lệnh nào, chỉ forward
 ssh -f -N -R 8000:127.0.0.1:8000 -o ExitOnForwardFailure=yes nano
-
-# trên Nano: server nằm ở localhost
-export EDGEFACE_SERVER=http://127.0.0.1:8000
+# trên Nano: export EDGEFACE_SERVER=http://127.0.0.1:8000
 ```
 
 **Đã chạy thật ngày 2026-09-22, đủ vòng nghiệp vụ:**
@@ -29,9 +65,14 @@ export EDGEFACE_SERVER=http://127.0.0.1:8000
 | Heartbeat | server thấy `gallery ver: 2`, `last_seen` cập nhật |
 | Admin thu hồi trên server → Nano pull | `applied 1 revocation`, thiết bị còn **0 bệnh nhân, 0 template** |
 
-**Ưu:** không đụng vào Windows, không cần IP tĩnh, đi qua SSH nên đã mã hoá sẵn.
-**Nhược:** chỉ dùng để phát triển/demo. Đường hầm chết khi phiên SSH đứt; cần `autossh`
-hoặc một systemd unit nếu muốn chạy lâu dài. Không phải cách triển khai thật.
+**Đã kiểm chứng khả năng tự hồi phục:** giết tiến trình ssh của đường hầm → systemd dựng
+lại sau 5 giây (PID đổi 12829 → 12874), `status` báo "tunnel OK" trở lại. Không cần
+`autossh`; `Restart=always` của systemd làm đúng việc đó.
+
+**Ưu:** không đụng vào Windows, không cần IP tĩnh, đi qua SSH nên đã mã hoá sẵn, và cổng
+8000 chỉ mở trên `127.0.0.1` nên không lộ ra LAN.
+**Nhược:** chỉ dùng để phát triển/demo — cần máy dev bật và phiên WSL đang chạy. Không
+phải cách triển khai cho phòng khám.
 
 ## Cách 2 — Chế độ mạng mirrored (gọn nhất cho LAN thật)
 

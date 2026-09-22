@@ -17,6 +17,13 @@ uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 Mở `http://<ip-máy-chủ>:8000/admin/`.
 
+## Kết nối nhanh khi server chạy trên WSL2
+```bash
+scripts/dev_link.sh up        # dựng server + đường hầm + sync trên Nano
+scripts/dev_link.sh status
+```
+Chi tiết và hai cách thay thế: [`docs/results/M7_wsl_nano_link.md`](../docs/results/M7_wsl_nano_link.md).
+
 ## Kết nối từ Nano
 Token chỉ hiện **một lần** lúc tạo thiết bị. Đưa vào `/etc/edgeface/sync.env` trên Nano:
 ```
