@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Sự kiện nghi giả mạo</h1>
+<table>
+  <tr><th>Thời điểm</th><th>Thiết bị</th><th>Phiên</th><th>p_real thấp nhất</th>
+      <th>Số frame</th><th>SHA-256 ảnh bằng chứng</th></tr>
+  {% for row in rows %}
+  <tr><td>{{ row.received_at.strftime('%Y-%m-%d %H:%M:%S') if row.received_at else '—' }}</td>
+      <td><code>{{ row.device_id }}</code></td>
+      <td class="muted">{{ row.session_id[:8] if row.session_id else '—' }}</td>
+      <td>{{ '%.3f'|format(row.min_p_real) if row.min_p_real is not none else '—' }}</td>
+      <td>{{ row.spoof_frames or '—' }}</td>
+      <td class="muted"><code>{{ row.evidence_sha256[:16] if row.evidence_sha256 else '—' }}</code></td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Chưa có sự kiện nào</td></tr>{% endfor %}
+</table>
+<p class="muted">Ảnh bằng chứng nằm trên thiết bị và tự xoá sau 7 ngày (C-16); ở đây chỉ lưu mã băm để đối chiếu.</p>
+{% endblock %}

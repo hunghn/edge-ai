@@ -116,6 +116,17 @@ enroll:                           # C-22 (D-20)
   duplicate_threshold: null       # TBD: uses match.threshold once D-01 is calibrated
   self_consistency_min: null      # TBD: mean cosine between the new templates
 
+sync:                             # server connection; secrets come from the environment
+  server_url: null                # EDGEFACE_SERVER overrides this
+  upload_interval_s: 30
+  pull_interval_s: 300            # D-26: how often today's gallery is refreshed
+  heartbeat_interval_s: 300
+  bundle_interval_s: 3600
+  batch_size: 50
+  bundles_dir: var/bundles
+  bundle_key_path: /etc/edgeface/bundle.key
+  backoff: {base_s: 5.0, max_s: 600.0, jitter: 0.2}
+
 kiosk:
   preview_fps: 5
   preview_width: 480

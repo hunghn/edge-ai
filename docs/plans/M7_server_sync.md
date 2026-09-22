@@ -1,6 +1,11 @@
 # M7 — Server tối giản + tiến trình sync
 
-**Trạng thái:** Chưa bắt đầu · **Tuần:** 4–5 · **Phụ thuộc:** M4 (định dạng outbox/gallery) · **Cần Nano:** Không
+**Trạng thái:** ✅ Hoàn thành 2026-09-22 · **Tuần:** 4–5 · **Phụ thuộc:** M4 · **Cần Nano:** Không
+
+> **Kết quả:** [`docs/results/M7_server_sync.md`](../results/M7_server_sync.md), cài đặt ở [`server/README.md`](../../server/README.md).
+> 294 test pass trên máy dev (26 server + 4 tích hợp với uvicorn thật), 253 pass trên Nano.
+> Khác plan: bỏ `passlib` (bcrypt 4.x gây lỗi) → PBKDF2 thư viện chuẩn; thêm chống path traversal khi giải nén bundle.
+> **Chưa chạy được:** thử nghiệm Nano ↔ server qua LAN, vì máy dev là WSL2 (NAT) nên Nano không kết nối tới được. Cần một PC trong LAN.
 
 ## 1. Mục tiêu và đầu ra
 - **Server** (C-02): một ứng dụng chạy trên PC/laptop trong LAN phòng khám. Server nhận sự kiện từ Nano, cấp gallery bệnh nhân trong ngày, danh sách thu hồi và gói model đã ký, kèm trang web quản trị.

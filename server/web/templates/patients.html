@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Bệnh nhân</h1>
+<form method="get" style="margin-bottom:16px">
+  <input name="q" value="{{ q }}" placeholder="Tìm theo mã hoặc tên">
+  <button type="submit">Tìm</button>
+</form>
+<table>
+  <tr><th>Mã</th><th>Họ tên</th><th>Năm sinh</th><th>Số mẫu</th><th>Lịch gần đây</th><th>Trạng thái</th><th></th></tr>
+  {% for row in rows %}
+  <tr>
+    <td><code>{{ row.patient.patient_code }}</code></td>
+    <td>{{ row.patient.full_name }}</td>
+    <td>{{ row.patient.birth_year or '—' }}</td>
+    <td>{{ row.templates }}</td>
+    <td class="muted">{% for a in row.appointments %}{{ a.procedure_date }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+    <td>{% if row.patient.revoked_at %}<span style="color:var(--alarm)">Đã thu hồi</span>{% else %}Hoạt động{% endif %}</td>
+    <td>
+      {% if not row.patient.revoked_at %}
+      <form class="inline" method="post" action="/admin/patients/{{ row.patient.patient_code }}/revoke"
+            onsubmit="return confirm('Thu hồi bệnh nhân {{ row.patient.patient_code }}? Kiosk sẽ xoá dữ liệu khuôn mặt ở lần đồng bộ kế tiếp.')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="danger" type="submit">Thu hồi</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="7" class="muted">Không có bệnh nhân nào</td></tr>{% endfor %}
+</table>
+{% endblock %}

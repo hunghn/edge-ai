@@ -1,0 +1,13 @@
+# Server runs on a PC/laptop, Python >= 3.8. It is NOT subject to the Nano's
+# Python 3.6 constraint: nothing here ever runs on the device.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlalchemy>=2.0
+pydantic>=2.6
+jinja2>=3.1
+# No password library on purpose: server/auth.py uses hashlib.pbkdf2_hmac, the same
+# scheme as the device, which avoids passlib/bcrypt version breakage.
+python-multipart>=0.0.9
+itsdangerous>=2.1
+httpx>=0.27
+pytest>=8.0

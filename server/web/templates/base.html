@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Quản trị định danh bệnh nhân{% endblock %}</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f7f9; --card:#fff; --line:#dfe3e8; --muted:#5b6672;
+          --accent:#1f6f43; --alarm:#a3242c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12161c; --card:#1a2029; --line:#2a3340; --muted:#94a1b2; --accent:#2f8f5b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:inherit;
+         font:16px/1.5 system-ui,"Segoe UI",Roboto,"Helvetica Neue",sans-serif; }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:14px 24px;
+           display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
+  header b { font-size:18px; }
+  nav a { color:inherit; text-decoration:none; padding:6px 10px; border-radius:6px; }
+  nav a:hover, nav a.on { background:var(--bg); }
+  main { padding:24px; max-width:1200px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 20px; }
+  .cards { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:16px 20px; min-width:180px; }
+  .card .n { font-size:32px; font-weight:600; }
+  .card .k { color:var(--muted); font-size:14px; }
+  table { width:100%; border-collapse:collapse; background:var(--card);
+          border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th, td { padding:10px 14px; text-align:left; border-bottom:1px solid var(--line); }
+  th { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  tr:last-child td { border-bottom:none; }
+  form.inline { display:inline; }
+  input, select, button { font:inherit; padding:8px 12px; border-radius:8px;
+                          border:1px solid var(--line); background:var(--card); color:inherit; }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.danger { background:var(--alarm); color:#fff; border-color:var(--alarm); }
+  .muted { color:var(--muted); }
+  .flash { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent);
+           padding:12px 16px; border-radius:8px; margin-bottom:16px; }
+  .flash.bad { border-left-color:var(--alarm); }
+  code { background:var(--bg); padding:2px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+{% if request.session.get('admin') %}
+<header>
+  <b>edgeface</b>
+  <nav>
+    <a href="/admin/">Tổng quan</a>
+    <a href="/admin/patients">Bệnh nhân</a>
+    <a href="/admin/appointments">Lịch hẹn</a>
+    <a href="/admin/sessions">Phiên nhận dạng</a>
+    <a href="/admin/spoof">Giả mạo</a>
+    <a href="/admin/devices">Thiết bị</a>
+  </nav>
+  <span style="margin-left:auto" class="muted">{{ request.session.get('admin') }}</span>
+  <a href="/admin/logout">Thoát</a>
+</header>
+{% endif %}
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>

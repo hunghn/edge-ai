@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Tổng quan 24 giờ qua</h1>
+<div class="cards">
+  <div class="card"><div class="n">{{ by_decision.values()|sum }}</div><div class="k">Phiên nhận dạng</div></div>
+  <div class="card"><div class="n">{{ by_action.get('confirm', 0) }}</div><div class="k">Điều dưỡng xác nhận</div></div>
+  <div class="card"><div class="n">{{ spoof_count }}</div><div class="k">Sự kiện giả mạo</div></div>
+  <div class="card"><div class="n">{{ patient_count }}</div><div class="k">Bệnh nhân đang hoạt động</div></div>
+</div>
+
+<h1>Theo quyết định</h1>
+<table>
+  <tr><th>Quyết định</th><th>Số phiên</th></tr>
+  {% for decision, count in by_decision.items() %}
+  <tr><td>{{ decision or '—' }}</td><td>{{ count }}</td></tr>
+  {% else %}<tr><td colspan="2" class="muted">Chưa có dữ liệu</td></tr>{% endfor %}
+</table>
+
+<h1 style="margin-top:24px">Thiết bị</h1>
+<table>
+  <tr><th>Mã</th><th>Tên</th><th>Lần cuối liên lạc</th><th>Gallery</th><th>Model</th></tr>
+  {% for device in devices %}
+  <tr><td><code>{{ device.device_id }}</code></td><td>{{ device.name }}</td>
+      <td>{{ device.last_seen_at.strftime('%Y-%m-%d %H:%M') if device.last_seen_at else 'chưa có' }}</td>
+      <td>{{ device.last_gallery_version or '—' }}</td><td>{{ device.model_version or '—' }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">Chưa đăng ký thiết bị nào</td></tr>{% endfor %}
+</table>
+{% endblock %}

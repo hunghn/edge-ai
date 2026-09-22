@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Lịch hẹn ngày {{ date }}</h1>
+{% if imported %}<div class="flash">Đã nhập {{ imported }} dòng.</div>{% endif %}
+{% if error %}<div class="flash bad">{{ error }}</div>{% endif %}
+<form method="get" style="margin-bottom:16px">
+  <input type="date" name="date" value="{{ date }}"><button type="submit">Xem</button>
+</form>
+<form method="post" action="/admin/appointments/import" enctype="multipart/form-data"
+      style="margin-bottom:16px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="file" name="file" accept=".csv" required>
+  <button class="primary" type="submit">Nhập CSV</button>
+  <span class="muted">Cột: {{ columns|join(', ') }}</span>
+</form>
+<table>
+  <tr><th>Mã lịch</th><th>Mã BN</th><th>Họ tên</th><th>Trạng thái</th></tr>
+  {% for appointment, patient in rows %}
+  <tr><td><code>{{ appointment.appointment_code }}</code></td>
+      <td><code>{{ patient.patient_code }}</code></td>
+      <td>{{ patient.full_name }}</td><td>{{ appointment.status }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">Không có lịch hẹn</td></tr>{% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Phiên nhận dạng ({{ days }} ngày)</h1>
+<form method="get" style="margin-bottom:16px">
+  <select name="decision">
+    <option value="">Tất cả quyết định</option>
+    {% for value in ['review_required', 'low_quality', 'spoof_suspect'] %}
+    <option value="{{ value }}" {% if decision == value %}selected{% endif %}>{{ value }}</option>
+    {% endfor %}
+  </select>
+  <input type="number" name="days" value="{{ days }}" min="1" max="90" style="width:90px">
+  <button type="submit">Lọc</button>
+  <a href="/admin/sessions.csv?days={{ days }}"><button type="button">Xuất CSV</button></a>
+</form>
+<table>
+  <tr><th>Thời điểm</th><th>Loại</th><th>Quyết định</th><th>Luật</th><th>Top1</th><th>Điểm</th>
+      <th>Phiếu</th><th>Điều dưỡng</th><th>Xác nhận</th></tr>
+  {% for row in rows %}
+  <tr><td>{{ row.started_at.strftime('%m-%d %H:%M:%S') if row.started_at else '—' }}</td>
+      <td>{{ row.kind or '—' }}</td><td>{{ row.decision or '—' }}</td><td>{{ row.rule_id or '—' }}</td>
+      <td>{{ row.top1_code or '—' }}</td>
+      <td>{{ '%.3f'|format(row.top1_score) if row.top1_score is not none else '—' }}</td>
+      <td>{{ row.votes if row.votes is not none else '—' }}</td>
+      <td>{{ row.nurse_action or '—' }}</td><td>{{ row.confirmed_code or '—' }}</td></tr>
+  {% else %}<tr><td colspan="9" class="muted">Chưa có phiên nào</td></tr>{% endfor %}
+</table>
+{% endblock %}

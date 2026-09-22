@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Thiết bị</h1>
+{% if token %}
+<div class="flash"><b>Token của thiết bị (chỉ hiện một lần):</b><br><code>{{ token }}</code><br>
+  Lưu vào <code>/etc/edgeface/sync.env</code> trên Nano. Máy chủ chỉ giữ bản băm.</div>
+{% endif %}
+<form method="post" action="/admin/devices" style="margin-bottom:16px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input name="device_id" placeholder="Mã thiết bị, ví dụ kiosk-01" required>
+  <input name="name" placeholder="Tên hiển thị" required>
+  <button class="primary" type="submit">Tạo thiết bị</button>
+</form>
+<table>
+  <tr><th>Mã</th><th>Tên</th><th>Lần cuối liên lạc</th><th>Gallery</th><th>Model</th><th>Trạng thái</th></tr>
+  {% for device in devices %}
+  <tr><td><code>{{ device.device_id }}</code></td><td>{{ device.name }}</td>
+      <td>{{ device.last_seen_at.strftime('%Y-%m-%d %H:%M') if device.last_seen_at else 'chưa có' }}</td>
+      <td>{{ device.last_gallery_version or '—' }}</td><td>{{ device.model_version or '—' }}</td>
+      <td>{{ 'Hoạt động' if device.active else 'Đã khoá' }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Chưa có thiết bị</td></tr>{% endfor %}
+</table>
+{% endblock %}

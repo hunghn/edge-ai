@@ -1,0 +1,28 @@
+# Sync process: pushes the outbox, pulls the gallery. The kiosk works without it.
+#   sudo cp deploy/systemd/edgeface-sync.service /etc/systemd/system/
+#   sudo systemctl enable --now edgeface-sync
+[Unit]
+Description=edgeface sync (server upload/download)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=js
+Group=js
+WorkingDirectory=/home/js/edge-ai
+Environment=PYTHONPATH=/home/js/edge-ai/src
+# Server URL, device id and token live here, not in git:
+#   EDGEFACE_SERVER=https://server.local:8443
+#   EDGEFACE_DEVICE_ID=kiosk-01
+#   EDGEFACE_TOKEN=...
+#   EDGEFACE_CA=/etc/edgeface/server_ca.pem
+EnvironmentFile=/etc/edgeface/sync.env
+ExecStart=/usr/bin/python3 -m edgeface.sync --config /home/js/edge-ai/configs/nano.yaml
+Restart=always
+RestartSec=10
+# Budget from the spec is ~80 MB.
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

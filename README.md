@@ -133,10 +133,10 @@ edge-ai/
 │   │
 │   ├── sync/                    # process 4: sync (~80 MB budget)
 │   │   ├── __main__.py
-│   │   ├── client.py            # requests session, auth, timeouts
+│   │   ├── client.py            # requests session, bearer token, timeouts, CA pinning
 │   │   ├── uploader.py          # outbox batches with exponential backoff + jitter
-│   │   ├── puller.py            # gallery, revocation list, model bundle
-│   │   └── bundle.py            # signature + SHA-256 verify, atomic swap into models dir
+│   │   ├── puller.py            # gallery + revocations; local enrollments are preserved
+│   │   └── bundle.py            # sha256 + HMAC signature + manifest + path-traversal checks
 │   │
 │   └── metrics/
 │       ├── recorder.py          # per-stage latency, e2e p50/p95, FPS → SQLite/CSV
@@ -186,7 +186,17 @@ edge-ai/
 │   ├── parity/                  # `ort`: our wrappers vs reference-repo goldens
 │   └── device/                  # `nano`: TRT FP16 vs ONNX goldens (cosine ≥ tol), memory budget smoke test
 │
+├── server/                      # DEV MACHINE / clinic PC (Python >= 3.8), never on the Nano
+│   ├── app.py                   # FastAPI: /api/v1 for devices, /admin for people
+│   ├── models.py, db.py, auth.py, schemas.py, settings.py, cli.py
+│   ├── api/{events,gallery,devices}.py
+│   ├── web/{views,csrf}.py + web/templates/
+│   └── tests/
+│
 └── docs/
+    ├── plans/                   # one plan per milestone and per stage (Vietnamese)
+    ├── results/                 # measurements: M2 latency, M3 pipeline, M6 kiosk, M7 sync
+    ├── figures/                 # landmark index map, kiosk screenshots
     └── pipeline_jetson_nano.docx
 ```
 
