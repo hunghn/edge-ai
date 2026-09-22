@@ -92,17 +92,18 @@ edge-ai/
 │   │   ├── embed.py             # S7  thin wrapper over models.arcface
 │   │   ├── best_frame.py        # S8  top-K by quality_score in time window; < min good → low_quality
 │   │   ├── matcher.py           # S9  numpy cosine (K×N), top1/top2, per-frame vote
-│   │   └── decision.py          # S10 rule engine over S4+S5+S9 → Decision (thresholds from config)
+│   │   └── decision.py          # S10 ordered rules R1–R6; every outcome needs the nurse
 │   │
 │   ├── engine/                  # process 2: engine
 │   │   ├── __main__.py          # (M5) `python3 -m edgeface.engine --config configs/nano.yaml`
 │   │   ├── models.py            # load the five wrappers; refuse engines built from other ONNX
 │   │   ├── loop.py              # per-frame orchestration S1→S10, early-exit on failed gates
-│   │   ├── session.py           # state machine: IDLE → GUIDING → COLLECTING → DECIDED → AWAIT_NURSE → COOLDOWN
-│   │   └── publisher.py         # writes kiosk_state, consumes nurse commands, emits outbox events
+│   │   ├── session.py           # pure state machine: (state, event) → (state, actions)
+│   │   ├── enroll.py            # capture 5 templates, duplicate + consistency checks
+│   │   └── publisher.py         # debounced kiosk_state, /dev/shm preview, nurse commands
 │   │
 │   ├── gallery/
-│   │   ├── gallery.py           # (M5) load (N,512) matrix + ids; hot-reload on version bump
+│   │   ├── gallery.py           # (N,512) matrix + ids; reloaded only between sessions
 │   │   └── retention.py         # 24 h TTL purge, revocations, evidence/log TTL, clock guard
 │   │
 │   ├── storage/                 # shared by engine / kiosk / sync — the only SQL in the project
@@ -145,7 +146,9 @@ edge-ai/
 │   ├── setup_nano.sh            # apt deps, pycuda build, swap/zram, power mode (nvpmodel), jetson_clocks
 │   ├── build_engines.sh         # trtexec --onnx=... --fp16 --saveEngine=models/engines/...
 │   ├── bench_model.py           # single-model latency on TRT (week 1–2 deliverable)
-│   └── run_pipeline_offline.py  # run S0–S10 over a recorded video for repeatable device benchmarks
+│   ├── db_admin.py              # init / create-operator / stats / purge / export-sessions
+│   ├── enroll_from_video.py     # build a gallery from recorded clips (M8/M9)
+│   └── run_pipeline_offline.py  # run S0–S8 over a recorded video for repeatable benchmarks
 │
 ├── tools/                       # ── DEV MACHINE ONLY (Python ≥ 3.8) ────────────────────
 │   ├── convert/

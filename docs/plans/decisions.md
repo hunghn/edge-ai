@@ -25,6 +25,9 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | C-16 | D-14 — ảnh bằng chứng spoof | Lưu **crop mặt** (scale 4.0) dạng JPEG, TTL **7 ngày** | 2026-09-21 | Người dùng |
 | C-17 | D-22 (phần Nano) — nhật ký phiên | Giữ **30 ngày** trên Nano (không chứa ảnh); thời gian giữ embedding trên server vẫn mở | 2026-09-21 | Người dùng |
 | C-18 | D-23 — chính sách PIN | **6 chữ số**, sai **5 lần** thì khoá **5 phút**; hash PBKDF2-HMAC-SHA256 | 2026-09-21 | Người dùng |
+| C-20 | D-30 — luật spoof cấp phiên | **≥ 2 frame** bị S4 chặn trong cửa sổ thu thập thì kết luận `spoof_suspect` (`decision.spoof_min_frames`) | 2026-09-22 | Người dùng |
+| C-21 | D-21 — mốc thời gian phiên | Chờ điều dưỡng **30 s**, nghỉ giữa hai lượt **3 s**, màn quản trị tự khoá sau **60 s** | 2026-09-22 | Người dùng |
+| C-22 | D-20 — enrollment | **Tự động chụp 5 mẫu**; nếu trùng khuôn mặt với BN khác thì **cảnh báo rồi vẫn cho lưu** sau khi điều dưỡng xác nhận lần hai | 2026-09-22 | Người dùng |
 | C-19 | Quy trình đo hiệu năng | Trước mỗi lần đo: `sudo jetson_clocks` (không tự áp dụng lại sau reboot). Engine **phải build lúc máy rảnh** — build lúc tải nặng làm TensorRT chọn tactic chậm hơn (ArcFace 18.08 ms so với 14.24 ms) | 2026-09-21 | Đo ở M2/M3 |
 | C-15 | D-16 — gộp 2 MiniFASNet | **Không gộp**, giữ 5 engine riêng: cả 5 engine chỉ tốn 1024 MB RSS so với ngân sách 2.0–2.6 GB | 2026-09-21 | Đo ở M2 |
 
@@ -46,15 +49,12 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | D-15 | S3 | Cách quy đổi tỉ lệ hình học 5 điểm sang độ (yaw) | Công thức trong `stages/S3_coarse_pose.md`, kiểm chứng bằng solvePnP | M3 |
 | D-17 | S9 | Cách hiểu luật "3-of-5": ≥ 3 frame bầu cùng một BN, áp dụng cả khi chỉ có 3–4 frame | Như mô tả trong `stages/S9_match.md` §3.2 | M5 |
 | D-18 | M9 | FAR mục tiêu để chọn `match.threshold` (1e-3 hay 1e-4); mức tăng FRR tối đa chấp nhận khi thêm margin | FAR 1e-3 | M9 |
-| D-30 | S4/S10 | Luật gộp spoof cấp phiên: "≥ 1 frame spoof" hay "≥ M trong K frame" | Cần chốt | M5 |
 | D-31 | S8 | Tính liên tục chủ thể trong cửa sổ thu thập: `iou_min`, `max_gap_s`, có dùng `cos_min` hay không | Cần chốt | M3 |
 
 ## Mở — ứng dụng
 
 | Mã | Chủ đề | Câu hỏi | Đề xuất | Chặn milestone |
 |---|---|---|---|---|
-| D-20 | Enrollment | Số template mỗi BN; chặn hay chỉ cảnh báo khi khuôn mặt trùng BN khác | 5 template; cảnh báo và yêu cầu điều dưỡng xác nhận lần 2 | M5 |
-| D-21 | Session | Timeout `AWAIT_NURSE`, thời gian `COOLDOWN`, thời gian tự khoá màn quản trị | Cần chốt | M5, M6 |
 | D-22 | Lưu trữ | *(phần Nano đã chốt: C-17)* Thời gian giữ embedding và log trên **server** | Cần chốt (liên quan chính sách riêng tư của phòng khám) | M7 |
 | D-24 | Sync | Cơ chế ký model bundle | HMAC-SHA256 bằng khoá chung (stdlib) | M7 |
 | D-25 | Kiosk | Kích thước và độ phân giải màn hình cảm ứng | Cần chốt | M6 |

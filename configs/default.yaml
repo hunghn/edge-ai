@@ -87,14 +87,39 @@ best_frame:                       # S8
     max_gap_s: null
     cos_min: null
 
-match:                            # S9 — TBD (§6)
-  threshold: null
-  margin_top1_top2: null
-  vote_k: 3
+match:                            # S9 — thresholds are TBD (§6)
+  threshold: null                 # TBD (D-01): calibrated in M9 from TAR@FAR
+  margin_top1_top2: null          # TBD (D-02)
+  vote_k: 3                       # D-17: at least 3 frames must vote for the same patient
   vote_n: 5
+  template_agg: max               # TBD (D-03): max | mean over a patient's templates
 
-decision:                         # S10 — TBD (§6.3)
-  rules: null
+decision:                         # S10 — rule engine (§6.3)
+  no_match_below: null            # TBD (D-04): below this, say "not in today's list"
+  spoof_min_frames: 2             # C-20: a session is a spoof at 2+ rejected frames
+  enabled_outcomes:               # only the outcomes named in the spec until D-04 is closed
+    - spoof_suspect
+    - low_quality
+    - review_required
+
+session:                          # C-21 (D-21)
+  await_nurse_timeout_s: 30       # then the session closes itself as `timeout`
+  cooldown_s: 3                   # pause between two people
+  idle_after_s: 2.0               # no face for this long -> back to IDLE
+  admin_lock_s: 60                # kiosk admin screen locks itself after this
+
+enroll:                           # C-22 (D-20)
+  num_templates: 5                # captured automatically once the gates pass
+  min_interval_s: 0.3             # spacing so the 5 shots are not the same instant
+  timeout_s: 30
+  duplicate_policy: warn          # warn | block
+  duplicate_threshold: null       # TBD: uses match.threshold once D-01 is calibrated
+  self_consistency_min: null      # TBD: mean cosine between the new templates
+
+kiosk:
+  preview_fps: 5
+  preview_width: 480
+  preview_path: /dev/shm/edgeface/preview.jpg
 
 storage:
   db_path: var/edge.db            # nano.yaml overrides with /var/lib/edgeface/edge.db

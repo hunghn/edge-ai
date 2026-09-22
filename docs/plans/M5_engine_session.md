@@ -1,6 +1,10 @@
 # M5 — Engine session: S9/S10, luồng nhận dạng và luồng enrollment
 
-**Trạng thái:** Chưa bắt đầu · **Tuần:** 3–4 · **Phụ thuộc:** M3 (S0–S8), M4 (storage) · **Cần Nano:** Không (chạy video trên x86)
+**Trạng thái:** ✅ Hoàn thành 2026-09-22 · **Tuần:** 3–4 · **Phụ thuộc:** M3, M4 · **Cần Nano:** Không
+
+> **Kết quả:** 200 unit test pass trên x86 và trên Nano. Chạy end-to-end cả hai máy: đăng ký BN từ video (5 template, nhất quán nội bộ 0.985) rồi nhận dạng lại → top1 đúng người, điểm 0.990, 5/5 phiếu bầu, `nurse_action=confirm` ghi vào `sessions`, sự kiện vào `outbox`, latency từng stage vào `stage_latency`.
+> Ba giá trị mới chốt: C-20 (spoof ≥ 2 frame), C-21 (chờ 30 s / nghỉ 3 s / khoá 60 s), C-22 (tự động chụp 5 mẫu, cảnh báo khi trùng rồi vẫn cho lưu).
+> Khác plan: thêm chế độ **lockstep** cho nguồn video (xử lý đủ mọi frame thay vì bỏ frame cũ như camera thật) và `config.validate` nay từ chối bật `decision.enabled_outcomes` mà enum `Decision` chưa có.
 
 ## 1. Mục tiêu và đầu ra
 - Tiến trình `engine` hoàn chỉnh: `python3 -m edgeface.engine --config configs/<env>.yaml`.

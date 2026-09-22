@@ -18,21 +18,45 @@ LOG = get_logger("capture")
 
 
 class RingBuffer(object):
-    """One slot. put() overwrites, get_latest() waits for something newer."""
+    """One slot. put() overwrites, get_latest() waits for something newer.
 
-    def __init__(self):
+    lockstep=True turns the slot into a handoff instead: put() waits until the consumer
+    has taken the previous frame. That is wrong for a live camera (latency would grow
+    without bound) but exactly right for replaying a recorded video, where every frame
+    must be processed for the run to be reproducible.
+    """
+
+    def __init__(self, lockstep=False):
         self._condition = threading.Condition()
         self._frame = None
+        self._closed = False
+        self.lockstep = lockstep
         self.dropped = 0
         self.received = 0
 
-    def put(self, frame):
+    def close(self):
+        """Wake up anyone blocked in put() or get_latest()."""
         with self._condition:
-            if self._frame is not None:
+            self._closed = True
+            self._condition.notify_all()
+
+    def put(self, frame, timeout=5.0):
+        with self._condition:
+            if self.lockstep:
+                deadline = time.time() + timeout
+                while self._frame is not None and not self._closed:
+                    remaining = deadline - time.time()
+                    if remaining <= 0:
+                        return False
+                    self._condition.wait(remaining)
+                if self._closed:
+                    return False
+            elif self._frame is not None:
                 self.dropped += 1       # the consumer never saw the previous frame
             self._frame = frame
             self.received += 1
             self._condition.notify_all()
+            return True
 
     def get_latest(self, after_id=-1, timeout=1.0):
         """Newest frame with frame_id > after_id, or None on timeout."""
@@ -42,9 +66,10 @@ class RingBuffer(object):
                 frame = self._frame
                 if frame is not None and frame.frame_id > after_id:
                     self._frame = None  # consumed: the next put() is not a drop
+                    self._condition.notify_all()   # lockstep producer may be waiting
                     return frame
                 remaining = deadline - time.time()
-                if remaining <= 0:
+                if remaining <= 0 or self._closed:
                     return None
                 self._condition.wait(remaining)
 
@@ -145,6 +170,14 @@ class FileSource(FrameSource):
         return image
 
 
+def lockstep_from_config(cfg):
+    """Replaying a file: process every frame unless the config asks for live pacing."""
+    capture_cfg = cfg["capture"]
+    if capture_cfg["source"] != "file":
+        return False
+    return not capture_cfg.get("realtime", False)
+
+
 def source_from_config(cfg):
     capture_cfg = cfg["capture"]
     kind = capture_cfg["source"]
@@ -162,9 +195,9 @@ def source_from_config(cfg):
 class CaptureThread(object):
     """Reads a FrameSource into a RingBuffer, reopening the camera when it disappears."""
 
-    def __init__(self, source, ring=None, read_fail_max=30, reconnect_s=2.0):
+    def __init__(self, source, ring=None, read_fail_max=30, reconnect_s=2.0, lockstep=False):
         self.source = source
-        self.ring = ring or RingBuffer()
+        self.ring = ring or RingBuffer(lockstep=lockstep)
         self.read_fail_max = read_fail_max
         self.reconnect_s = reconnect_s
         self.frame_id = 0
@@ -216,6 +249,7 @@ class CaptureThread(object):
 
     def stop(self, timeout=2.0):
         self._stop.set()
+        self.ring.close()
         if self._thread is not None:
             self._thread.join(timeout)
         self.source.release()

@@ -53,6 +53,24 @@ def _check_range(cfg, key, lo, hi):
         raise ValueError("config {} = {} outside [{}, {}]".format(key, value, lo, hi))
 
 
+def _check_enabled_outcomes(cfg):
+    """decision.enabled_outcomes may only name outcomes the Decision enum can express.
+
+    The spec defers the full outcome list to §6.3 (D-04). Enabling a name the code does
+    not know would silently do nothing, so it is refused here instead.
+    """
+    from edgeface.types import Decision
+
+    known = set(member.value for member in Decision)
+    configured = set(get(cfg, "decision.enabled_outcomes", ()) or ())
+    unknown = configured - known
+    if unknown:
+        raise ValueError(
+            "decision.enabled_outcomes has values the Decision enum does not define: {}. "
+            "Add them to edgeface.types.Decision once D-04 is decided.".format(
+                sorted(unknown)))
+
+
 def validate(cfg):
     if get(cfg, "backend") not in ("ort", "trt"):
         raise ValueError("config backend must be 'ort' or 'trt'")
@@ -69,6 +87,9 @@ def validate(cfg):
         raise ValueError("config best_frame.min_good must be <= best_frame.k_max")
     if get(cfg, "match.vote_k") > get(cfg, "match.vote_n"):
         raise ValueError("config match.vote_k must be <= match.vote_n")
+    if get(cfg, "match.template_agg", "max") not in ("max", "mean"):
+        raise ValueError("config match.template_agg must be 'max' or 'mean'")
+    _check_enabled_outcomes(cfg)
 
 
 PACKAGED_CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),

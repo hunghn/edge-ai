@@ -1,0 +1,28 @@
+# Engine process: camera -> S1..S10 -> SQLite.
+#   sudo cp deploy/systemd/edgeface-engine.service /etc/systemd/system/
+#   sudo systemctl enable --now edgeface-engine
+[Unit]
+Description=edgeface engine (face recognition pipeline)
+After=network.target
+# A CSI camera would also need: After=nvargus-daemon.service
+
+[Service]
+Type=simple
+User=js
+Group=js
+WorkingDirectory=/home/js/edge-ai
+Environment=PYTHONPATH=/home/js/edge-ai/src
+Environment=EDGEFACE_LOG_LEVEL=INFO
+# jetson_clocks does not survive a reboot and the measurements depend on it (C-19).
+ExecStartPre=-/usr/bin/sudo -n /usr/bin/jetson_clocks
+ExecStart=/usr/bin/python3 -m edgeface.engine --config /home/js/edge-ai/configs/nano.yaml
+Restart=always
+RestartSec=5
+# Engine budget from the spec is 2.0-2.6 GB; measured peak with five engines is ~1.4 GB.
+MemoryMax=2600M
+# SIGTERM closes the open session and releases the camera; give it time to finish.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
