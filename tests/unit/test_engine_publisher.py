@@ -82,3 +82,47 @@ def test_claim_commands_passes_through(conn, cfg):
     commands = pub.claim_commands(now=T0 + 1)
     assert [c["type"] for c in commands] == ["confirm"]
     assert pub.claim_commands(now=T0 + 2) == []
+
+
+def _preview(pub, cfg, image, box=None, good=False, at=T0):
+    import cv2
+
+    assert pub.write_preview(image, box, at, good) is True
+    return cv2.imread(cfg["kiosk"]["preview_path"])
+
+
+def test_the_face_outline_lands_where_the_face_is(conn, cfg):
+    """The box is given as fractions of the frame, and drawn on the downscaled preview,
+    so the only thing that can go wrong is the scaling - which is what this checks."""
+    pub = Publisher(conn, cfg)
+    grey = np.full((720, 1280, 3), 128, dtype=np.uint8)
+
+    plain = _preview(pub, cfg, grey, None, at=T0)
+    drawn = _preview(pub, cfg, grey, (0.25, 0.25, 0.75, 0.75), True, at=T0 + 10)
+
+    height, width = drawn.shape[:2]
+    # The outline is on the rectangle's edge...
+    assert not np.array_equal(drawn[int(0.25 * height), int(0.5 * width)],
+                              plain[int(0.25 * height), int(0.5 * width)])
+    # ...and nowhere near the corner of the frame.
+    assert np.array_equal(drawn[2, 2], plain[2, 2])
+
+
+def test_a_good_frame_and_a_guided_frame_get_different_colours(conn, cfg):
+    """Green once every gate is passed, amber while there is still an instruction: the
+    patient can see the system is satisfied without reading the words."""
+    pub = Publisher(conn, cfg)
+    grey = np.full((720, 1280, 3), 128, dtype=np.uint8)
+    box = (0.25, 0.25, 0.75, 0.75)
+    good = _preview(pub, cfg, grey, box, True, at=T0)
+    poor = _preview(pub, cfg, grey, box, False, at=T0 + 10)
+    edge = (int(0.25 * good.shape[0]), int(0.5 * good.shape[1]))
+    assert not np.array_equal(good[edge], poor[edge])
+
+
+def test_a_box_outside_the_frame_is_clipped_not_crashed(conn, cfg):
+    pub = Publisher(conn, cfg)
+    grey = np.full((480, 640, 3), 128, dtype=np.uint8)
+    assert pub.write_preview(grey, (-0.5, -0.5, 1.5, 1.5), T0, True) is True
+    # A degenerate box draws nothing rather than raising.
+    assert pub.write_preview(grey, (0.8, 0.8, 0.2, 0.2), T0 + 10, True) is True

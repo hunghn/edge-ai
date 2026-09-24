@@ -50,12 +50,45 @@ def test_candidate_card_shows_the_patient_and_four_buttons():
     assert [b.kind for b in view.buttons] == ["confirm", "reject", "retry", "search"]
 
 
-def test_the_raw_score_is_never_shown():
-    """A number invites arguing with the model; the scale is meaningless before M9."""
+def test_the_card_shows_the_score_and_the_gap_to_the_runner_up():
+    """Both numbers, and the word as well: the word is what is read at a glance."""
+    view = vm.build(state("AWAIT_NURSE", payload=candidate_payload()), T0, {})
+    rows = dict(view.fields)
+    assert rows[strings.LABEL_SCORE] == "0.81"
+    assert rows[strings.LABEL_MARGIN] == "0.20"
+    assert rows[strings.LABEL_CONFIDENCE] == strings.CONFIDENCE_LOW
+
+
+def test_the_score_is_never_a_percentage():
+    """It is a cosine similarity. A % sign would claim an accuracy nothing has measured,
+    and the conversion to a probability needs the calibration of D-01, which has no data."""
     view = vm.build(state("AWAIT_NURSE", payload=candidate_payload()), T0, {})
     rendered = " ".join([view.title, view.message] + [str(v) for _, v in view.fields])
-    assert "0.81" not in rendered
-    assert dict(view.fields)[strings.LABEL_CONFIDENCE] == strings.CONFIDENCE_LOW
+    assert "%" not in rendered
+    assert "81%" not in rendered
+
+
+def test_the_score_can_be_switched_off_for_the_clinic():
+    view = vm.build(state("AWAIT_NURSE", payload=candidate_payload()), T0, {},
+                    show_score=False)
+    rows = dict(view.fields)
+    assert strings.LABEL_SCORE not in rows and strings.LABEL_MARGIN not in rows
+    assert rows[strings.LABEL_CONFIDENCE] == strings.CONFIDENCE_LOW
+
+
+def test_a_candidate_without_a_margin_still_renders():
+    """no_match and some rule paths publish a score with nothing to compare it against."""
+    payload = candidate_payload()
+    payload["candidate"].pop("margin")
+    rows = dict(vm.build(state("AWAIT_NURSE", payload=payload), T0, {}).fields)
+    assert rows[strings.LABEL_SCORE] == "0.81"
+    assert strings.LABEL_MARGIN not in rows
+
+
+def test_the_candidate_card_shows_the_camera(kiosk_preview=None):
+    """The nurse compares a face to a name, so the face has to be on the screen."""
+    view = vm.build(state("AWAIT_NURSE", payload=candidate_payload()), T0, {})
+    assert view.show_preview is True
 
 
 def test_high_confidence_label_when_the_decision_is_confident():

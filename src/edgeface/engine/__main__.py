@@ -28,6 +28,7 @@ from edgeface.engine.session import Session
 from edgeface.gallery import retention
 from edgeface.gallery.gallery import Gallery
 from edgeface.pipeline import best_frame as bf
+from edgeface.pipeline import detect as detect_stage
 from edgeface.pipeline import matcher
 from edgeface.pipeline.capture import CaptureThread, lockstep_from_config, source_from_config
 from edgeface.pipeline.decision import SessionEvidence, decide
@@ -59,10 +60,46 @@ class Engine(object):
         self.last_frame = None
         self.worst_spoof_frame = None
         self.running = False
+        # The face outline drawn on the preview: (x1, y1, x2, y2) as fractions of the
+        # frame, plus whether that frame cleared every gate.
+        self.face_box = None
+        self.face_box_good = False
+        self._last_box_detect = None
 
         closed = sessions.close_dangling(self.conn)   # sessions left open by a crash
         if closed:
             LOG.warning("closed %d session(s) left open by a previous run", closed)
+
+    # ------------------------------------------------------------------ face outline
+    def _remember_box(self, detection, image_shape, good):
+        """Keep the newest face rectangle, as fractions of the frame."""
+        if detection is None:
+            self.face_box, self.face_box_good = None, False
+            return
+        height, width = image_shape[:2]
+        x1, y1, x2, y2 = [float(v) for v in detection.bbox[:4]]
+        self.face_box = (x1 / width, y1 / height, x2 / width, y2 / height)
+        self.face_box_good = bool(good)
+
+    def _detect_box_only(self, frame, now):
+        """Keep the outline alive while the nurse decides, without the rest of S2-S10.
+
+        Throttled to the preview rate, not the camera rate: the box is drawn onto the
+        preview image, so it cannot move faster than that image is written, and running
+        the detector three times per preview would just spend GPU nobody can see.
+        """
+        if not self.cfg.get("kiosk", {}).get("face_box", True):
+            return
+        if (self._last_box_detect is not None
+                and (now - self._last_box_detect) < self.publisher.preview_period):
+            return
+        self._last_box_detect = now
+        result = detect_stage.detect(frame.image, self.models["detector"], self.cfg)
+        faces = result.data or []
+        # The largest face, the same subject the pipeline itself would have picked.
+        best = max(faces, key=lambda d: (d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1]),
+                   default=None)
+        self._remember_box(best, frame.image.shape, good=False)
 
     # ------------------------------------------------------------------ actions
     def _open_session(self, payload, now):
@@ -241,7 +278,6 @@ class Engine(object):
 
         self._execute(self.session.on_camera_ok(now), now)
         self.last_frame = frame
-        self.publisher.write_preview(frame.image, now)
 
         busy = self.session.state in (session_mod.AWAIT_NURSE, session_mod.COOLDOWN,
                                       session_mod.ENROLL_REVIEW, session_mod.ENROLL_ERROR)
@@ -252,7 +288,14 @@ class Engine(object):
                 if worst is None or (outcome.obs.spoof is not None
                                      and outcome.obs.spoof.p_real < self.session.min_p_real):
                     self.worst_spoof_frame = (frame, outcome.obs.det)
+            self._remember_box(outcome.obs.det, frame.image.shape,
+                               good=outcome.guidance is None)
             self._execute(self.session.on_frame(outcome, frame.ts), frame.ts)
+        else:
+            self._detect_box_only(frame, now)
+
+        # After the pipeline, so the outline belongs to the frame it is drawn on.
+        self.publisher.write_preview(frame.image, self.face_box, now, self.face_box_good)
 
         self.publisher.heartbeat(now)     # prove the engine is alive even while waiting
 

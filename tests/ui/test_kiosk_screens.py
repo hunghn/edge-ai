@@ -100,7 +100,9 @@ def test_idle_then_guidance_then_candidate(kiosk):
     window.refresh()
     text = rendered_text(window)
     assert "Nguyễn Thị Hà" in text and "BN001" in text
-    assert "0.81" not in text          # the raw score never reaches the screen
+    assert "0.81" in text and "0.20" in text      # score and gap to the runner-up
+    assert "%" not in text                        # a cosine is not a probability
+    assert window.stack.currentWidget().preview.isVisible()
 
 
 def test_tapping_confirm_sends_the_command(kiosk):
@@ -357,3 +359,51 @@ def test_low_quality_asks_for_another_try(kiosk):
     window.refresh()
     assert window.stack.currentWidget() is window.pages[vm.ALERT]
     assert "Thử lại" in buttons_of(window)
+
+
+def test_the_screen_is_not_rebuilt_on_every_redraw(kiosk):
+    """Widgets must survive a redraw, or no click on the device ever completes.
+
+    A click is a press and a release, and the window redraws ten times a second. Destroy
+    the button in between and Qt drops the mouse grab, so the release reaches nothing and
+    the click is lost - which is why only the PIN pad, the one row of buttons that is
+    built once instead of per render, worked on the kiosk.
+
+    QTest cannot express this: its synthetic release is delivered straight to the widget
+    object, grab or no grab, so a press/redraw/release test passes either way. Widget
+    identity across redraws is the property that actually matters, so that is what this
+    asserts.
+    """
+    window, controller = kiosk
+    enter_admin(window, controller)
+    before = buttons_of(window)["Đăng ký bệnh nhân mới"]
+    for _ in range(5):
+        window.refresh()
+    assert buttons_of(window)["Đăng ký bệnh nhân mới"] is before
+
+    # The same for the candidate card, the screen a nurse touches on every patient.
+    controller.logout()
+    publish(controller.conn, "AWAIT_NURSE", None, {
+        "decision": "review_required",
+        "candidate": {"code": "BN001", "score": 0.8, "margin": 0.1, "votes": 5, "k": 5}})
+    window.refresh()
+    confirm = buttons_of(window)["Xác nhận"]
+    for _ in range(5):
+        window.refresh()
+    assert buttons_of(window)["Xác nhận"] is confirm
+
+
+def test_search_results_survive_a_redraw(kiosk):
+    """Same hazard on the manual lookup list: the nurse taps a row, not a button."""
+    window, controller = kiosk
+    enrol_patient(controller)
+    publish(controller.conn, "AWAIT_NURSE", None, {"decision": "low_quality"})
+    window.refresh()
+    buttons_of(window)["Tìm thủ công"].click()
+    page = window.stack.currentWidget()
+    page.search_box.setText("Hà")
+    window.refresh()
+    row = page.results.item(0)
+    for _ in range(5):
+        window.refresh()
+    assert page.results.item(0) is row

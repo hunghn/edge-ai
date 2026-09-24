@@ -59,8 +59,16 @@ class Publisher(object):
         state, guidance, session_id, payload = self._last_args
         return self.publish(state, guidance, session_id, payload, now)
 
-    def write_preview(self, image, now=None):
-        """Downscaled JPEG for the kiosk: temp file then rename, so no torn reads."""
+    def write_preview(self, image, box=None, now=None, good=False):
+        """Downscaled JPEG for the kiosk: temp file then rename, so no torn reads.
+
+        `box` is the face rectangle as fractions of the frame, (x1, y1, x2, y2), or None
+        when nothing is detected. It is drawn here rather than published in kiosk_state:
+        the state row lives on the SD card and is only meant to be written when something
+        changes, whereas a box that follows a face changes on every frame. Drawing it into
+        the picture also keeps the two in step — a box travelling through the database
+        while the pixels travel through /dev/shm would always lag the face it outlines.
+        """
         now = clock.now() if now is None else now
         if (now - self._last_preview) < self.preview_period:
             return False
@@ -70,6 +78,8 @@ class Publisher(object):
         height, width = image.shape[:2]
         scale = float(self.preview_width) / width
         small = cv2.resize(image, (self.preview_width, max(1, int(round(height * scale)))))
+        if box is not None:
+            self._draw_box(small, box, good)
         # Encode in memory: cv2.imwrite picks its codec from the file extension, and the
         # temp file cannot be called .jpg or the kiosk might read it half-written.
         ok, buffer = cv2.imencode(".jpg", small, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
@@ -82,6 +92,24 @@ class Publisher(object):
         os.rename(tmp, self.preview_path)
         self._last_preview = now
         return True
+
+    @staticmethod
+    def _draw_box(small, box, good):
+        """Outline the face on the already-downscaled preview.
+
+        Green once the frame has passed every gate, amber while the pipeline still has
+        something to say about it, so a patient can see when the system is satisfied
+        without reading the instruction.
+        """
+        height, width = small.shape[:2]
+        x1 = int(round(max(0.0, min(1.0, box[0])) * width))
+        y1 = int(round(max(0.0, min(1.0, box[1])) * height))
+        x2 = int(round(max(0.0, min(1.0, box[2])) * width))
+        y2 = int(round(max(0.0, min(1.0, box[3])) * height))
+        if x2 <= x1 or y2 <= y1:
+            return
+        colour = (162, 224, 126) if good else (90, 190, 240)     # BGR
+        cv2.rectangle(small, (x1, y1), (x2, y2), colour, 2)
 
     def claim_commands(self, now=None):
         return kiosk_ipc.claim_commands(self.conn, at=now)

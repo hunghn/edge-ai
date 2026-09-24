@@ -64,6 +64,10 @@ class Page(QtWidgets.QWidget):
         self.buttons.setSpacing(16)
         outer.addLayout(self.buttons)
 
+        # What is currently on screen. None, not (), so the first render always builds.
+        self._fields_shown = None
+        self._buttons_shown = None
+
     def _clear_fields(self):
         while self.fields.count():
             item = self.fields.takeAt(0)
@@ -86,28 +90,35 @@ class Page(QtWidgets.QWidget):
         self.banner.style().unpolish(self.banner)
         self.banner.style().polish(self.banner)
 
-        self._clear_fields()
-        for label, value in view.fields:
-            label_widget = QtWidgets.QLabel(label)
-            label_widget.setObjectName("fieldLabel")
-            value_widget = QtWidgets.QLabel(str(value))
-            value_widget.setObjectName("fieldValue")
-            self.fields.addRow(label_widget, value_widget)
+        # Rebuild only what changed. render() runs ten times a second, and a click is a
+        # press and a release: replacing the buttons in between means the release lands
+        # on a widget that no longer exists and the click is silently lost.
+        if view.fields != self._fields_shown:
+            self._fields_shown = view.fields
+            self._clear_fields()
+            for label, value in view.fields:
+                label_widget = QtWidgets.QLabel(label)
+                label_widget.setObjectName("fieldLabel")
+                value_widget = QtWidgets.QLabel(str(value))
+                value_widget.setObjectName("fieldValue")
+                self.fields.addRow(label_widget, value_widget)
 
         self.countdown.setText("" if view.countdown_s is None
                                else "Tự huỷ sau {} giây".format(int(view.countdown_s)))
 
-        self._clear_buttons()
-        self.buttons.addStretch(1)
-        for button in view.buttons:
-            widget = QtWidgets.QPushButton(button.label)
-            if button.primary:
-                widget.setObjectName("primary")
-            elif button.kind in ("reject",):
-                widget.setObjectName("danger")
-            widget.clicked.connect(
-                lambda _checked=False, b=button: self.button_clicked.emit(b))
-            self.buttons.addWidget(widget)
+        if view.buttons != self._buttons_shown:
+            self._buttons_shown = view.buttons
+            self._clear_buttons()
+            self.buttons.addStretch(1)
+            for button in view.buttons:
+                widget = QtWidgets.QPushButton(button.label)
+                if button.primary:
+                    widget.setObjectName("primary")
+                elif button.kind in ("reject",):
+                    widget.setObjectName("danger")
+                widget.clicked.connect(
+                    lambda _checked=False, b=button: self.button_clicked.emit(b))
+                self.buttons.addWidget(widget)
         if self.preview is not None:
             self.preview.setVisible(view.show_preview)
 
@@ -123,6 +134,7 @@ class SearchPage(Page):
         self.search_box = QtWidgets.QLineEdit()
         self.search_box.setPlaceholderText(strings.LABEL_SEARCH)
         self.search_box.textChanged.connect(self.query_changed.emit)
+        self._rows_shown = None
         self.results = QtWidgets.QListWidget()
         self.results.itemActivated.connect(self._chosen)
         self.results.itemClicked.connect(self._chosen)
@@ -135,6 +147,11 @@ class SearchPage(Page):
 
     def render(self, view):
         super(SearchPage, self).render(view)
+        # Same hazard as the button row: rebuilding the list on every redraw destroys the
+        # row under the nurse's finger before the tap completes.
+        if view.fields == self._rows_shown:
+            return
+        self._rows_shown = view.fields
         self.results.clear()
         for code, name in view.fields:
             item = QtWidgets.QListWidgetItem("{}  —  {}".format(code, name))
@@ -292,7 +309,7 @@ class KioskWindow(QtWidgets.QMainWindow):
         self.pages = {
             vm.IDLE: Page(),
             vm.GUIDANCE: Page(with_preview=True, roi=roi),
-            vm.CANDIDATE: Page(),
+            vm.CANDIDATE: Page(with_preview=True, roi=roi),
             vm.ALERT: Page(),
             vm.ERROR: Page(),
             vm.SEARCH: SearchPage(),
@@ -336,7 +353,10 @@ class KioskWindow(QtWidgets.QMainWindow):
 
         if fullscreen:
             self.showFullScreen()
-            self.setCursor(QtCore.Qt.BlankCursor)
+            # A touchscreen has no pointer, so the arrow is hidden by default. Set
+            # kiosk.hide_cursor to false when driving the kiosk with a mouse.
+            if (cfg.get("kiosk") or {}).get("hide_cursor", True):
+                self.setCursor(QtCore.Qt.BlankCursor)
         self.refresh()
 
     # ------------------------------------------------------------------ events

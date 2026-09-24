@@ -85,10 +85,14 @@ LABEL_CONFIDENCE = "Mức khớp"
 LABEL_SEARCH = "Nhập mã hoặc tên bệnh nhân"
 LABEL_PROGRESS = "Đã chụp {done}/{total} ảnh"
 
-# Confidence is shown as a word, never as a raw score: a number invites the nurse to
-# argue with it, and the scale is meaningless without the calibration of M9.
+# The word stays: it is what a nurse reads at a glance. The numbers sit above it for
+# whoever wants to look closer, and can be switched off with kiosk.show_score for a
+# clinic deployment. They are cosine similarities, not probabilities - never write them
+# as a percentage, which would promise an accuracy the uncalibrated system cannot claim.
 CONFIDENCE_HIGH = "Khớp cao"
 CONFIDENCE_LOW = "Cần kiểm tra"
+LABEL_SCORE = "Điểm khớp"
+LABEL_MARGIN = "Cách BN thứ hai"
 
 # PIN / admin
 PIN_HINT = "Nhập mã PIN {digits} chữ số"

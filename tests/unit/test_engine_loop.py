@@ -166,3 +166,78 @@ def test_an_invalid_embedding_is_reported_not_collected(cfg):
     outcome = engine_loop.process_frame(make_frame(), models, cfg, collector)
     assert outcome.stage == "S7" and outcome.guidance == GuidanceCode.EMBED_INVALID
     assert collector.count == 0
+
+
+# --------------------------------------------------------------- the face outline
+
+
+class _FakeDetector(object):
+    """Counts how often it runs, so the throttle can be observed."""
+
+    def __init__(self, faces):
+        self.faces = faces
+        self.calls = 0
+
+    def detect(self, image, score_min=0.5):
+        self.calls += 1
+        return list(self.faces)
+
+
+def _bare_engine(cfg, detector):
+    """An Engine without the camera, the models or the database.
+
+    __new__ instead of __init__ on purpose: the two methods under test touch only these
+    attributes, and building a real Engine would need five TensorRT engines and a Nano.
+    """
+    from edgeface.engine.__main__ import Engine
+
+    engine = Engine.__new__(Engine)
+    engine.cfg = cfg
+    engine.models = {"detector": detector}
+    engine.face_box = None
+    engine.face_box_good = False
+    engine._last_box_detect = None
+    engine.publisher = type("P", (), {"preview_period": 0.2})()
+    return engine
+
+
+def test_the_outline_is_stored_as_fractions_of_the_frame(cfg):
+    """Fractions, not pixels: the preview is a different size from the frame."""
+    engine = _bare_engine(cfg, _FakeDetector([]))
+    detection = Detection(bbox=np.array([320.0, 180.0, 640.0, 540.0]), score=0.9, kps=None)
+    engine._remember_box(detection, (720, 1280, 3), good=True)
+    assert engine.face_box == (0.25, 0.25, 0.5, 0.75)
+    assert engine.face_box_good is True
+
+
+def test_the_outline_disappears_when_the_face_does(cfg):
+    engine = _bare_engine(cfg, _FakeDetector([]))
+    engine._remember_box(Detection(np.array([0.0, 0.0, 10.0, 10.0]), 0.9, None),
+                         (100, 100, 3), good=True)
+    engine._remember_box(None, (100, 100, 3), good=False)
+    assert engine.face_box is None and engine.face_box_good is False
+
+
+def test_the_waiting_detector_runs_at_preview_rate_not_camera_rate(cfg):
+    """While the nurse decides, the box is refreshed as often as the picture it is drawn
+    on - five times a second - not as often as the camera delivers frames."""
+    face = Detection(bbox=np.array([10.0, 10.0, 50.0, 50.0]), score=0.9, kps=None)
+    detector = _FakeDetector([face])
+    engine = _bare_engine(cfg, detector)
+    frame = Frame(1, 0.0, np.zeros((480, 640, 3), dtype=np.uint8))
+
+    for tick in range(15):            # one second of camera at 15 fps
+        engine._detect_box_only(frame, tick / 15.0)
+    assert detector.calls == 5
+    assert engine.face_box is not None
+    # Never green while waiting: no gate was run on that frame.
+    assert engine.face_box_good is False
+
+
+def test_the_outline_can_be_switched_off(cfg):
+    detector = _FakeDetector([Detection(np.array([1.0, 1.0, 9.0, 9.0]), 0.9, None)])
+    off = dict(cfg)
+    off["kiosk"] = dict(cfg.get("kiosk") or {}, face_box=False)
+    engine = _bare_engine(off, detector)
+    engine._detect_box_only(Frame(1, 0.0, np.zeros((480, 640, 3), dtype=np.uint8)), 10.0)
+    assert detector.calls == 0 and engine.face_box is None

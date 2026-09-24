@@ -79,7 +79,8 @@ class KioskController(object):
                 return self._change_pin_view()
             return self._admin_view(now)
         patient = self._candidate_patient()
-        return view_model.build(self.state, now, patient, self.last_update)
+        show_score = (self.cfg.get("kiosk") or {}).get("show_score", True)
+        return view_model.build(self.state, now, patient, self.last_update, show_score)
 
     def _enrolling(self):
         """True while the engine is running the enrolment flow."""

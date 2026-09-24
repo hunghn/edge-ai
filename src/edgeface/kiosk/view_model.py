@@ -47,7 +47,7 @@ def confidence_label(decision_value):
             else strings.CONFIDENCE_LOW)
 
 
-def candidate_fields(candidate, patient=None):
+def candidate_fields(candidate, patient=None, show_score=True):
     """Rows of the candidate card. `patient` is the local record, when the kiosk has it."""
     patient = patient or {}
     fields = [(strings.LABEL_CODE, candidate.get("code") or "")]
@@ -57,6 +57,13 @@ def candidate_fields(candidate, patient=None):
         fields.append((strings.LABEL_BIRTH_YEAR, str(patient["birth_year"])))
     if patient.get("appointment_code"):
         fields.append((strings.LABEL_APPOINTMENT, patient["appointment_code"]))
+    if show_score:
+        # The gap to the runner-up often says more than the top score itself: two
+        # patients at 0.81 are not equally certain if one of them has nobody else close.
+        if candidate.get("score") is not None:
+            fields.append((strings.LABEL_SCORE, "{:.2f}".format(candidate["score"])))
+        if candidate.get("margin") is not None:
+            fields.append((strings.LABEL_MARGIN, "{:.2f}".format(candidate["margin"])))
     return tuple(fields)
 
 
@@ -73,7 +80,7 @@ def _guidance_view(state):
                 severity=OK, show_preview=True, session_id=state.get("session_id"))
 
 
-def _await_nurse_view(state, patient, now):
+def _await_nurse_view(state, patient, now, show_score=True):
     payload = state.get("payload") or {}
     decision = payload.get("decision") or "review_required"
     candidate = payload.get("candidate")
@@ -94,11 +101,12 @@ def _await_nurse_view(state, patient, now):
                              Button("search", strings.BTN_SEARCH, None)),
                     countdown_s=countdown_s, session_id=state.get("session_id"))
 
-    fields = candidate_fields(candidate, patient)
+    fields = candidate_fields(candidate, patient, show_score)
     fields += ((strings.LABEL_CONFIDENCE, confidence_label(decision)),)
     return View(screen=CANDIDATE, title=strings.CANDIDATE_TITLE,
                 message=strings.decision_hint(decision),
                 severity=OK if decision == "candidate_suggested" else ATTENTION,
+                show_preview=True,
                 buttons=(Button("confirm", strings.BTN_CONFIRM, "confirm", True),
                          Button("reject", strings.BTN_REJECT, "reject"),
                          Button("retry", strings.BTN_RETRY, "retry"),
@@ -146,7 +154,7 @@ def _enroll_view(state):
                 buttons=(Button("enroll_cancel", strings.BTN_CANCEL, "enroll_cancel"),))
 
 
-def build(state, now, patient=None, last_update=None):
+def build(state, now, patient=None, last_update=None, show_score=True):
     """kiosk_state row -> View. `state` may be None when nothing was ever published."""
     if state is None:
         return View(screen=ERROR, title=strings.ERROR_TITLE,
@@ -164,7 +172,7 @@ def build(state, now, patient=None, last_update=None):
     if engine_state.startswith("ENROLL"):
         return _enroll_view(state)
     if engine_state == "AWAIT_NURSE":
-        return _await_nurse_view(state, patient, now)
+        return _await_nurse_view(state, patient, now, show_score)
     if engine_state in ("GUIDING", "COLLECTING", "DECIDED"):
         return _guidance_view(state)
     return _idle_view()
