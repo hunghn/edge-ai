@@ -328,3 +328,34 @@ def test_change_pin_rejects_a_wrong_current_pin(kiosk, conn):
     assert "hiện tại không đúng" in kiosk.view(T0).message
     kiosk.logout()
     assert kiosk.unlock(operator_id, "123456", T0) is True
+
+
+# --------------------------------------------------------------------- preview
+
+
+def test_an_unchanged_preview_is_not_read_again(kiosk, cfg):
+    """Decoding and repainting a picture already on screen is pure waste, and at fifteen
+    frames a second there is no room for it."""
+    path = cfg["kiosk"]["preview_path"]
+    assert kiosk.preview_changed() is False          # nothing written yet
+
+    with open(path, "wb") as f:
+        f.write(b"first")
+    assert kiosk.preview_changed() is True
+    assert kiosk.preview_changed() is False          # same file, same answer
+
+
+def test_a_new_preview_frame_is_noticed(kiosk, cfg):
+    path = cfg["kiosk"]["preview_path"]
+    with open(path, "wb") as f:
+        f.write(b"first")
+    kiosk.preview_changed()
+    with open(path, "wb") as f:
+        f.write(b"second frame, different size")     # the engine renames a new file in
+    assert kiosk.preview_changed() is True
+
+
+def test_a_missing_preview_is_not_an_error(kiosk):
+    """Normal while the engine starts up, or if /dev/shm was cleared."""
+    assert kiosk.preview_changed() is False
+    assert kiosk.preview_bytes() is None

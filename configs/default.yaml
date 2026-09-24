@@ -134,7 +134,7 @@ kiosk:
   hide_cursor: true               # false while driving the kiosk with a mouse
   face_box: true                  # outline the detected face on the preview
   show_score: true                # cosine score + top1-top2 gap on the candidate card
-  preview_fps: 5
+  preview_fps: 15                 # engine write rate AND kiosk read rate
   preview_width: 480
   preview_path: /dev/shm/edgeface/preview.jpg
 

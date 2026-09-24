@@ -17,7 +17,7 @@ LOG = get_logger("kiosk.window")
 
 STYLE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "style.qss")
 POLL_MS = 100
-PREVIEW_MS = 200
+PREVIEW_FPS_DEFAULT = 15
 ADMIN_GESTURE_MS = 3000       # long-press the corner to reach the admin screen
 
 
@@ -406,9 +406,14 @@ class KioskWindow(QtWidgets.QMainWindow):
         self._poll = QtCore.QTimer(self)
         self._poll.timeout.connect(self.refresh)
         self._poll.start(POLL_MS)
+        # One setting drives both ends: the engine writes at kiosk.preview_fps and the
+        # kiosk reads at the same rate. It used to be hardcoded here, so changing the
+        # config moved the writer and left the reader behind.
+        preview_fps = float((cfg.get("kiosk") or {}).get("preview_fps")
+                            or PREVIEW_FPS_DEFAULT)
         self._preview_timer = QtCore.QTimer(self)
         self._preview_timer.timeout.connect(self._refresh_preview)
-        self._preview_timer.start(PREVIEW_MS)
+        self._preview_timer.start(max(20, int(round(1000.0 / preview_fps))))
 
         # Hidden way into the admin screen: long-press the bottom-left corner.
         self._gesture = QtCore.QTimer(self)
@@ -440,6 +445,8 @@ class KioskWindow(QtWidgets.QMainWindow):
         preview = getattr(page, "preview", None)
         if preview is None or not preview.isVisible():
             return
+        if not self.controller.preview_changed():
+            return                            # same picture as last tick; nothing to do
         preview.show_jpeg(self.controller.preview_bytes())
 
     def _on_button(self, button):

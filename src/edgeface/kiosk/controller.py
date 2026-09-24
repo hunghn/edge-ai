@@ -36,6 +36,7 @@ class KioskController(object):
         self.local_context = {}
         self.preview_path = (cfg.get("kiosk") or {}).get(
             "preview_path", "/dev/shm/edgeface/preview.jpg")
+        self._preview_token = None
 
     # ------------------------------------------------------------------ polling
     def poll(self, now=None):
@@ -102,6 +103,23 @@ class KioskController(object):
                 return f.read()
         except (IOError, OSError):
             return None
+
+    def preview_changed(self):
+        """True when the engine has written a new frame since the last time we asked.
+
+        Reading, decoding and repainting an image the viewer is already looking at is
+        pure waste, and at fifteen frames a second there is no room for it. The engine
+        publishes with os.rename, so the modification time moves with every new picture.
+        """
+        try:
+            stat = os.stat(self.preview_path)
+            token = (stat.st_mtime, stat.st_size)
+        except OSError:
+            token = None
+        if token == self._preview_token:
+            return False
+        self._preview_token = token
+        return token is not None
 
     # ------------------------------------------------------------------ commands
     def send(self, command, payload=None, now=None):
