@@ -61,7 +61,7 @@ def run_variant(experiment, variant, workdir):
                                                                      experiment["gallery_db"]),
                "--out", scores_path, "--probes"] + experiment["probes"]
     print("  running", name)
-    result = subprocess.run(command, cwd=REPO, capture_output=True)
+    result = subprocess.run(command, cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode != 0:
         print(result.stdout.decode()[-2000:], result.stderr.decode()[-2000:])
         raise SystemExit("variant {} failed".format(name))

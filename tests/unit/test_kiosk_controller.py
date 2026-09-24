@@ -224,11 +224,27 @@ def test_a_tap_postpones_the_lock(kiosk, conn):
 def test_taking_the_enrolment_shots_does_not_lock_the_screen(kiosk, conn):
     """Nobody touches the screen while the patient is being photographed."""
     unlocked(kiosk, conn)
+    for tick in range(1, 200):
+        # The engine keeps publishing while it collects; a silent engine would rightly
+        # put the "engine down" screen up instead, which is a different test.
+        publish(conn, "ENROLL_COLLECTING", at=T0 + tick)
+        kiosk.poll(T0 + tick)
+        view = kiosk.view(T0 + tick)
+    # The engine owns the screen during the shots, so the nurse sees the shot counter,
+    # not the admin menu - but the admin session behind it must still be unlocked.
+    assert view.screen == vm.ENROLL
+    assert kiosk.auth.is_unlocked(T0 + 200) is True
+    assert kiosk.local_screen == vm.ADMIN
+
+
+def test_the_admin_menu_returns_after_the_enrolment_finishes(kiosk, conn):
+    unlocked(kiosk, conn)
     publish(conn, "ENROLL_COLLECTING", at=T0 + 1)
     kiosk.poll(T0 + 1)
-    for tick in range(2, 200):
-        view = kiosk.view(T0 + tick)
-    assert view.screen == vm.ADMIN
+    assert kiosk.view(T0 + 2).screen == vm.ENROLL
+    publish(conn, "COOLDOWN", at=T0 + 3)
+    kiosk.poll(T0 + 3)
+    assert kiosk.view(T0 + 4).screen == vm.ADMIN      # ready for the next patient
 
 
 def test_back_returns_to_the_menu_instead_of_logging_out(kiosk, conn):

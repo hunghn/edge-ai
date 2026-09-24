@@ -266,3 +266,94 @@ def test_engine_silence_shows_the_error_screen(kiosk):
     controller.poll(1000.0)
     view = controller.view(1000.0 + 60)     # no updates for a minute
     assert view.screen == vm.ERROR
+
+
+def test_enrolment_runs_from_the_form_to_the_saved_patient(kiosk):
+    """The whole enrolment path, tap by tap, the way a nurse walks it.
+
+    The form is only the first of five screens: it hands over to the engine, which guides
+    the patient, counts the shots and then asks the nurse to save.
+    """
+    window, controller = kiosk
+    enter_admin(window, controller)
+    buttons_of(window)["Đăng ký bệnh nhân mới"].click()
+    window.enroll_form.inputs["patient_code"].setText("BN042")
+    window.enroll_form.inputs["full_name"].setText("Trần Văn B")
+    buttons_of(window)["Bắt đầu chụp"].click()
+    assert kiosk_ipc.claim_commands(controller.conn, at=1001.0)[0]["type"] == "start_enroll"
+
+    # The engine takes over: the form must give way to the live guidance screen.
+    publish(controller.conn, "ENROLL_GUIDING", "STEP_CLOSER", {"progress": 0, "total": 5})
+    window.refresh()
+    assert window.stack.currentWidget() is not window.enroll_form
+    assert "Vui lòng đứng gần hơn" in rendered_text(window)
+
+    publish(controller.conn, "ENROLL_COLLECTING", None, {"progress": 3, "total": 5})
+    window.refresh()
+    assert "Đã chụp 3/5" in rendered_text(window)
+
+    # Five shots taken: the nurse gets the save button.
+    publish(controller.conn, "ENROLL_REVIEW", None, {"n_templates": 5})
+    window.refresh()
+    assert "Lưu bệnh nhân" in buttons_of(window)
+    buttons_of(window)["Lưu bệnh nhân"].click()
+    assert kiosk_ipc.claim_commands(controller.conn, at=1002.0)[0]["type"] == "enroll_confirm"
+
+
+def test_identification_card_offers_every_nurse_action(kiosk):
+    """The identify screen, tap by tap: each of the four buttons must reach the engine."""
+    window, controller = kiosk
+    enrol_patient(controller)
+
+    for label, expected in (("Xác nhận", "confirm"), ("Không phải", "reject"),
+                            ("Thử lại", "retry")):
+        publish(controller.conn, "AWAIT_NURSE", None, {
+            "decision": "review_required", "rule_id": "R3",
+            "candidate": {"code": "BN001", "score": 0.8, "margin": 0.1, "votes": 5, "k": 5}})
+        window.refresh()
+        assert window.stack.currentWidget() is window.pages[vm.CANDIDATE]
+        text = rendered_text(window)
+        assert "BN001" in text and "Nguyễn Thị Hà" in text
+        assert "Cần kiểm tra" in text          # thresholds are null: never "Khớp cao"
+        buttons_of(window)[label].click()
+        sent = kiosk_ipc.claim_commands(controller.conn, at=1001.0)
+        assert [c["type"] for c in sent] == [expected], label
+
+
+def test_manual_search_picks_a_patient_by_hand(kiosk):
+    window, controller = kiosk
+    enrol_patient(controller)
+    publish(controller.conn, "AWAIT_NURSE", None, {
+        "decision": "review_required",
+        "candidate": {"code": "BN001", "score": 0.8, "margin": 0.1, "votes": 5, "k": 5}})
+    window.refresh()
+
+    buttons_of(window)["Tìm thủ công"].click()
+    page = window.stack.currentWidget()
+    assert page is window.pages[vm.SEARCH]
+    page.search_box.setText("Hà")             # accent-insensitive lookup
+    window.refresh()
+    assert page.results.count() == 1
+    tap_row(page.results, 0)
+
+    command = kiosk_ipc.claim_commands(controller.conn, at=1001.0)[0]
+    assert command["type"] == "manual" and command["payload"]["code"] == "BN001"
+
+
+def test_a_spoof_suspect_raises_the_alarm_screen(kiosk):
+    window, controller = kiosk
+    publish(controller.conn, "AWAIT_NURSE", None, {"decision": "spoof_suspect"})
+    window.refresh()
+    assert window.stack.currentWidget() is window.pages[vm.ALERT]
+    # No confirm button on this screen: a suspected presentation attack is never
+    # something the nurse can wave through with one tap.
+    assert "Xác nhận" not in buttons_of(window)
+    assert "Thử lại" in buttons_of(window)
+
+
+def test_low_quality_asks_for_another_try(kiosk):
+    window, controller = kiosk
+    publish(controller.conn, "AWAIT_NURSE", None, {"decision": "low_quality"})
+    window.refresh()
+    assert window.stack.currentWidget() is window.pages[vm.ALERT]
+    assert "Thử lại" in buttons_of(window)

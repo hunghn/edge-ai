@@ -64,6 +64,10 @@ class KioskController(object):
             # throw away the whole attempt, so the capture itself counts as activity.
             if self._enrolling():
                 self.auth.touch(now)
+                # Hand the screen to the engine while it photographs the patient: the
+                # admin menu must not sit on top of the pose guidance, the shot counter
+                # or the Save button. The admin session stays unlocked underneath.
+                return view_model.build(self.state, now, None, self.last_update)
             if not self.auth.is_unlocked(now):
                 self.local_screen = view_model.PIN
                 self.local_context = {"operator_id": None, "pin": "", "error": None}

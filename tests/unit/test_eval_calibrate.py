@@ -47,7 +47,7 @@ def test_refuses_to_calibrate_on_test_participants(tmp_path):
     split = write_split(str(tmp_path / "split.json"), dev=["P1", "P2"], test=["P3", "P4"])
     result = subprocess.run(
         [sys.executable, CALIBRATE, "--scores", scores, "--split", split,
-         "--out", str(tmp_path / "out.md")], capture_output=True)
+         "--out", str(tmp_path / "out.md")], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert result.returncode != 0
     message = result.stderr.decode()
     assert "TEST split" in message and "P3" in message
@@ -59,7 +59,7 @@ def test_accepts_dev_only_scores(tmp_path):
     out = str(tmp_path / "proposal.md")
     result = subprocess.run(
         [sys.executable, CALIBRATE, "--scores", scores, "--split", split,
-         "--far", "0.1", "--out", out], capture_output=True)
+         "--far", "0.1", "--out", out], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert result.returncode == 0, result.stderr.decode()
     with open(out) as f:
         text = f.read()
@@ -71,7 +71,7 @@ def test_the_proposal_does_not_touch_the_config(tmp_path):
     config_before = open(os.path.join(REPO, "configs", "default.yaml")).read()
     scores = write_scores(str(tmp_path / "scores.csv"), participants=("P1", "P2"))
     subprocess.run([sys.executable, CALIBRATE, "--scores", scores, "--far", "0.1",
-                    "--out", str(tmp_path / "p.md")], capture_output=True)
+                    "--out", str(tmp_path / "p.md")], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert open(os.path.join(REPO, "configs", "default.yaml")).read() == config_before
     # and the thresholds are still null, waiting for a human
     assert "threshold: null" in config_before
@@ -96,5 +96,5 @@ def test_margin_sweep_with_a_single_gallery_entry(tmp_path):
 
 def test_missing_scores_file_is_reported(tmp_path):
     result = subprocess.run([sys.executable, CALIBRATE, "--scores",
-                             str(tmp_path / "nope.csv")], capture_output=True)
+                             str(tmp_path / "nope.csv")], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert result.returncode != 0

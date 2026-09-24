@@ -56,7 +56,7 @@ def test_split_cli_writes_json(tmp_path):
     out = str(tmp_path / "split.json")
     result = subprocess.run(
         [sys.executable, os.path.join(REPO, "tools", "dataset", "split.py"),
-         "--manifest", path, "--out", out], capture_output=True)
+         "--manifest", path, "--out", out], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert result.returncode == 0, result.stderr.decode()
     with open(out) as f:
         payload = json.load(f)
@@ -70,7 +70,7 @@ def test_empty_manifest_is_an_error(tmp_path):
         f.write("clip,participant_id\n")
     result = subprocess.run(
         [sys.executable, os.path.join(REPO, "tools", "dataset", "split.py"),
-         "--manifest", path, "--out", str(tmp_path / "out.json")], capture_output=True)
+         "--manifest", path, "--out", str(tmp_path / "out.json")], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert result.returncode != 0
     assert b"no participant_id" in result.stderr
 
