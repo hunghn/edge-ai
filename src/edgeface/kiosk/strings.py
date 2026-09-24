@@ -20,6 +20,7 @@ ADMIN_TITLE = "Quản trị"
 ENROLL_TITLE = "Đăng ký khuôn mặt"
 PATIENTS_TITLE = "Bệnh nhân hôm nay"
 STATUS_TITLE = "Trạng thái hệ thống"
+CHANGE_PIN_TITLE = "Đổi mã PIN"
 ERROR_TITLE = "Hệ thống tạm dừng"
 
 # One line per guidance code from the pipeline. Phrased as an instruction.
@@ -69,6 +70,12 @@ BTN_REVOKE = "Thu hồi"
 BTN_LOGOUT = "Thoát quản trị"
 BTN_CHANGE_PIN = "Đổi PIN"
 
+# The admin menu. These four are the whole reason the admin screen exists, so they are
+# plain buttons on the landing screen rather than anything the nurse has to discover.
+BTN_MENU_ENROLL = "Đăng ký bệnh nhân mới"
+BTN_MENU_PATIENTS = "Bệnh nhân hôm nay"
+BTN_MENU_STATUS = "Trạng thái hệ thống"
+
 # Labels
 LABEL_CODE = "Mã bệnh nhân"
 LABEL_NAME = "Họ và tên"
@@ -88,6 +95,22 @@ PIN_HINT = "Nhập mã PIN {digits} chữ số"
 PIN_WRONG = "Mã PIN không đúng. Còn {left} lần thử."
 PIN_LOCKED = "Đã khoá. Vui lòng thử lại sau {seconds} giây."
 ADMIN_LOCKED_HINT = "Màn hình quản trị tự khoá sau {seconds} giây không thao tác."
+
+# Changing the PIN. Three steps, because a typo in step two would lock the nurse out of
+# the kiosk with no way back in from the kiosk itself.
+CHANGE_PIN_OLD = "Nhập mã PIN hiện tại"
+CHANGE_PIN_NEW = "Nhập mã PIN mới"
+CHANGE_PIN_REPEAT = "Nhập lại mã PIN mới"
+CHANGE_PIN_MISMATCH = "Hai lần nhập không giống nhau. Vui lòng nhập lại."
+CHANGE_PIN_WRONG_OLD = "Mã PIN hiện tại không đúng."
+CHANGE_PIN_BAD_FORMAT = "Mã PIN phải gồm {digits} chữ số."
+CHANGE_PIN_SAVED = "Đã đổi mã PIN."
+
+# Revoking a patient
+REVOKE_PICK = "Chọn một bệnh nhân trong danh sách để thu hồi."
+REVOKE_CONFIRM = "Thu hồi bệnh nhân {code}? Dữ liệu khuôn mặt sẽ bị xoá khỏi máy này."
+REVOKE_DONE = "Đã thu hồi bệnh nhân {code}."
+PATIENTS_EMPTY = "Chưa có bệnh nhân nào được đăng ký hôm nay."
 
 # Enrollment
 ENROLL_DUPLICATE = "Khuôn mặt này giống bệnh nhân {code}. Vui lòng kiểm tra kỹ trước khi lưu."

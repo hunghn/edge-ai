@@ -19,6 +19,7 @@ ADMIN = "admin"
 ENROLL = "enroll"
 PATIENTS = "patients"
 STATUS = "status"
+CHANGE_PIN = "change_pin"
 ERROR = "error"
 
 # Severity drives the colour: ok (green), attention (amber), alarm (red).
@@ -26,7 +27,8 @@ OK = "ok"
 ATTENTION = "attention"
 ALARM = "alarm"
 
-# kind: "confirm" | "reject" | "retry" | "search" | "cancel", label: text, command: what to
+# kind: "confirm" | "reject" | "retry" | "search" | "cancel" | the admin menu entries
+# ("enroll", "patients", "status", "change_pin", "revoke"), label: text, command: what to
 # send to the engine (None when the kiosk handles it locally).
 Button = namedtuple("Button", ["kind", "label", "command", "primary"])
 Button.__new__.__defaults__ = (None, False)

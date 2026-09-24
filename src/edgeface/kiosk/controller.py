@@ -9,14 +9,18 @@ import os
 from edgeface.common.log import get_logger
 from edgeface.kiosk import view_model
 from edgeface.kiosk.auth import AdminAuth
-from edgeface.storage import clock, kiosk_ipc, outbox, patients, templates
+from edgeface.storage import clock, kiosk_ipc, operators, outbox, patients, templates
 from edgeface.storage.db import get_meta, transaction
 
 LOG = get_logger("kiosk")
 
 # Screens the kiosk opens by itself; the rest follow the engine's state.
 LOCAL_SCREENS = (view_model.SEARCH, view_model.PIN, view_model.ADMIN,
-                 view_model.PATIENTS, view_model.STATUS)
+                 view_model.PATIENTS, view_model.STATUS, view_model.CHANGE_PIN)
+
+# The screens that sit behind the PIN. Leaving one of them locks the admin session.
+ADMIN_SCREENS = (view_model.ADMIN, view_model.PATIENTS, view_model.STATUS,
+                 view_model.CHANGE_PIN)
 
 
 class KioskController(object):
@@ -54,14 +58,28 @@ class KioskController(object):
             return self._pin_view()
         if self.local_screen == view_model.SEARCH:
             return self._search_view()
-        if self.local_screen in (view_model.ADMIN, view_model.PATIENTS, view_model.STATUS):
+        if self.local_screen in ADMIN_SCREENS:
+            # Taking a patient's five enrolment shots takes longer than the lock timeout
+            # and the nurse is watching the patient, not the screen. Locking there would
+            # throw away the whole attempt, so the capture itself counts as activity.
+            if self._enrolling():
+                self.auth.touch(now)
             if not self.auth.is_unlocked(now):
                 self.local_screen = view_model.PIN
+                self.local_context = {"operator_id": None, "pin": "", "error": None}
                 return self._pin_view()
-            self.auth.touch(now)
+            # No touch() here on purpose: window.refresh() runs ten times a second, so
+            # touching from the draw path would reset the timer forever and the screen
+            # would never lock. Only real taps and keystrokes call touch().
+            if self.local_screen == view_model.CHANGE_PIN:
+                return self._change_pin_view()
             return self._admin_view(now)
         patient = self._candidate_patient()
         return view_model.build(self.state, now, patient, self.last_update)
+
+    def _enrolling(self):
+        """True while the engine is running the enrolment flow."""
+        return str((self.state or {}).get("state") or "").startswith("ENROLL")
 
     def _candidate_patient(self):
         """Local record for the candidate, so the card can show a name, not just a code."""
@@ -95,16 +113,39 @@ class KioskController(object):
     def on_button(self, button, now=None):
         """A tap on one of the buttons of the current View."""
         now = clock.now() if now is None else now
+        self.touch(now)
         if button.command:
             self.send(button.command, now=now)
             return True
         if button.kind == "search":
             self.open_search()
             return True
-        if button.kind == "cancel":
-            self.close_local()
+        if button.kind in ("patients", "status"):
+            self.open_admin_tab(button.kind)
             return True
+        if button.kind == "change_pin":
+            self.open_change_pin()
+            return True
+        if button.kind == "revoke":
+            code = (self.local_context or {}).get("selected")
+            if code:
+                self.revoke_patient(code, now=now)
+            return True
+        if button.kind == "cancel":
+            # Inside the admin area, Back means "up to the menu", not "log out".
+            if self.local_screen in (view_model.PATIENTS, view_model.STATUS,
+                                     view_model.CHANGE_PIN):
+                self.open_admin_tab(view_model.ADMIN)
+            else:
+                self.close_local()
+            return True
+        # "enroll" is handled in window.py: the form is a widget, not a View.
         return False
+
+    def touch(self, now=None):
+        """Record nurse activity, so the admin screen locks on idleness, not on drawing."""
+        if self.auth.is_unlocked(now):
+            self.auth.touch(now)
 
     # ------------------------------------------------------------------ local screens
     def open_search(self):
@@ -146,16 +187,84 @@ class KioskController(object):
         self.close_local()
 
     def open_admin_tab(self, screen):
-        if screen not in (view_model.ADMIN, view_model.PATIENTS, view_model.STATUS):
+        if screen not in ADMIN_SCREENS:
             raise ValueError("not an admin tab: {}".format(screen))
         self.local_screen = screen
+        self.local_context = {}
+
+    def open_change_pin(self):
+        self.local_screen = view_model.CHANGE_PIN
+        self.local_context = {"step": "old", "old": None, "new": None, "error": None}
+
+    def submit_change_pin(self, pin, now=None):
+        """One step of old -> new -> repeat. Returns the step now being asked for.
+
+        The repeat step is not politeness: one wrong digit in the 'new' step would lock
+        the nurse out of the kiosk, and there is no way back in from the kiosk itself.
+        """
+        from edgeface.kiosk import strings
+
+        context = dict(self.local_context or {})
+        step = context.get("step", "old")
+        context["error"] = None
+
+        if step == "old":
+            context["old"], context["step"] = pin, "new"
+        elif step == "new":
+            if not operators.validate_pin_format(pin, self.auth.pin_length):
+                context["error"] = strings.CHANGE_PIN_BAD_FORMAT.format(
+                    digits=self.auth.pin_length)
+            else:
+                context["new"], context["step"] = pin, "repeat"
+        else:
+            if pin != context.get("new"):
+                # Back to the start: we do not know which of the two was the typo.
+                context.update({"step": "new", "new": None,
+                                "error": strings.CHANGE_PIN_MISMATCH})
+            else:
+                ok, reason = self.auth.change_pin(context["old"], pin, now)
+                if ok:
+                    LOG.info("operator %s changed their PIN", self.auth.operator_id)
+                    self.local_screen = view_model.ADMIN
+                    self.local_context = {"notice": strings.CHANGE_PIN_SAVED}
+                    return "done"
+                # A wrong old PIN counts as a failed attempt in operators.verify(), so
+                # repeated guesses here lock the account just like the unlock screen.
+                context.update({
+                    "step": "old", "old": None, "new": None,
+                    "error": (strings.CHANGE_PIN_BAD_FORMAT.format(digits=self.auth.pin_length)
+                              if reason == "bad_format" else strings.CHANGE_PIN_WRONG_OLD)})
+        self.local_context = context
+        return context["step"]
 
     # ------------------------------------------------------------------ admin data
     def start_enroll(self, form, now=None):
         self.send("start_enroll", form, now)
 
-    def revoke(self, code, reason="nurse", now=None):
-        self.send("revoke", {"code": code, "reason": reason}, now)
+    def select_patient(self, code):
+        """Remember which row of the patient list is highlighted, so Revoke has a target."""
+        context = dict(self.local_context or {})
+        context["selected"] = code
+        context.pop("notice", None)
+        self.local_context = context
+
+    def revoke_patient(self, code, reason="nurse", now=None):
+        """Revoke locally, the way sync/puller.py does it.
+
+        Not a command to the engine: the engine has no revoke action, and the gallery is
+        reloaded from the database anyway. Bumping the version is what makes the engine
+        notice, through the refresh_if_changed() call already in its loop.
+        """
+        from edgeface.kiosk import strings
+
+        now = clock.now() if now is None else now
+        with transaction(self.conn):
+            patients.revoke(self.conn, code, reason, now)
+            patients.delete(self.conn, code)
+            templates.bump_gallery_version(self.conn)
+        LOG.warning("nurse revoked patient %s", code)
+        self.local_context = {"notice": strings.REVOKE_DONE.format(code=code)}
+        return True
 
     def today_patients(self, now=None):
         now = clock.now() if now is None else now
@@ -193,22 +302,61 @@ class KioskController(object):
     def _admin_view(self, now):
         from edgeface.kiosk import strings
 
+        context = self.local_context or {}
+
         if self.local_screen == view_model.PATIENTS:
             rows = tuple((row["patient_code"], row["full_name"])
                          for row in self.today_patients(now))
+            selected = context.get("selected")
+            buttons = [view_model.Button("cancel", strings.BTN_BACK, None)]
+            if selected:
+                buttons.insert(0, view_model.Button("revoke", strings.BTN_REVOKE, None))
+            if context.get("notice"):
+                message, severity = context["notice"], view_model.OK
+            elif not rows:
+                message, severity = strings.PATIENTS_EMPTY, view_model.ATTENTION
+            elif selected:
+                message = strings.REVOKE_CONFIRM.format(code=selected)
+                severity = view_model.ATTENTION
+            else:
+                message, severity = strings.REVOKE_PICK, view_model.OK
             return view_model.View(screen=view_model.PATIENTS, title=strings.PATIENTS_TITLE,
-                                   message="", severity=view_model.OK, fields=rows,
-                                   buttons=(view_model.Button("cancel", strings.BTN_BACK, None),))
+                                   message=message, severity=severity, fields=rows,
+                                   buttons=tuple(buttons))
+
         if self.local_screen == view_model.STATUS:
             return view_model.View(screen=view_model.STATUS, title=strings.STATUS_TITLE,
                                    message="", severity=view_model.OK,
                                    fields=self.status_rows(now),
                                    buttons=(view_model.Button("cancel", strings.BTN_BACK, None),))
-        return view_model.View(screen=view_model.ADMIN, title=strings.ADMIN_TITLE,
-                               message=strings.ADMIN_LOCKED_HINT.format(
-                                   seconds=int(self.auth.seconds_until_lock(now))),
-                               severity=view_model.OK,
-                               buttons=(view_model.Button("cancel", strings.BTN_LOGOUT, None),))
+
+        # The admin landing screen: the menu. Without these four buttons the screen is a
+        # dead end, which is exactly the bug this replaced.
+        return view_model.View(
+            screen=view_model.ADMIN, title=strings.ADMIN_TITLE,
+            message=context.get("notice") or strings.ADMIN_LOCKED_HINT.format(
+                seconds=int(self.auth.seconds_until_lock(now))),
+            severity=view_model.OK,
+            buttons=(
+                view_model.Button("enroll", strings.BTN_MENU_ENROLL, None, True),
+                view_model.Button("patients", strings.BTN_MENU_PATIENTS, None),
+                view_model.Button("status", strings.BTN_MENU_STATUS, None),
+                view_model.Button("change_pin", strings.BTN_CHANGE_PIN, None),
+                view_model.Button("cancel", strings.BTN_LOGOUT, None),
+            ))
+
+    def _change_pin_view(self):
+        from edgeface.kiosk import strings
+
+        context = self.local_context or {}
+        prompts = {"old": strings.CHANGE_PIN_OLD, "new": strings.CHANGE_PIN_NEW,
+                   "repeat": strings.CHANGE_PIN_REPEAT}
+        error = context.get("error")
+        return view_model.View(
+            screen=view_model.CHANGE_PIN, title=strings.CHANGE_PIN_TITLE,
+            message=error or prompts.get(context.get("step", "old"), strings.CHANGE_PIN_OLD),
+            severity=view_model.ATTENTION if error else view_model.OK,
+            buttons=(view_model.Button("cancel", strings.BTN_BACK, None),))
 
     def status_rows(self, now=None):
         """Rows for the system status tab, read straight from the shared database."""

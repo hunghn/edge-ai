@@ -7,7 +7,7 @@ import pytest
 from edgeface import config as cfg_mod
 from edgeface.kiosk import view_model as vm
 from edgeface.kiosk.controller import KioskController
-from edgeface.storage import db, kiosk_ipc, operators, patients
+from edgeface.storage import clock, db, kiosk_ipc, operators, patients, templates
 
 T0 = 1_700_000_000.0
 FAST = 1000          # PBKDF2 rounds for the tests
@@ -42,7 +42,9 @@ def publish(conn, state, guidance=None, payload=None, at=T0):
 def add_patient(conn, code, name, at=T0):
     with db.transaction(conn):
         patients.upsert_patient(conn, code, name, 1990, "kiosk", at)
-        patients.upsert_appointment(conn, "AP-" + code, code, "2026-09-22")
+        # Today's date, not a literal: the candidate card looks up the appointment for
+        # the current day, so a hardcoded date turns the test into a time bomb.
+        patients.upsert_appointment(conn, "AP-" + code, code, clock.local_date(clock.now()))
 
 
 def test_poll_reports_only_changes(kiosk, conn):
@@ -177,3 +179,136 @@ def test_enroll_command_carries_the_form(kiosk, conn):
     assert command["type"] == "start_enroll"
     assert command["payload"]["patient_code"] == "BN007"
     assert command["payload"]["operator_id"] == operator_id
+
+
+# --------------------------------------------------------------------- admin menu
+
+
+def unlocked(kiosk, conn, at=T0):
+    with db.transaction(conn):
+        operator_id = operators.create(conn, "Nurse A", "123456", iterations=FAST, at=at)
+    kiosk.poll(at)
+    kiosk.open_admin_tab(vm.ADMIN)
+    kiosk.unlock(operator_id, "123456", at)
+    return operator_id
+
+
+def test_admin_menu_offers_every_function(kiosk, conn):
+    """The admin screen used to hold one button ("log out") and nothing else."""
+    unlocked(kiosk, conn)
+    kinds = [button.kind for button in kiosk.view(T0).buttons]
+    assert kinds == ["enroll", "patients", "status", "change_pin", "cancel"]
+
+
+def test_redrawing_does_not_postpone_the_lock(kiosk, conn):
+    """C-21: the window redraws ten times a second, and that must not count as activity.
+
+    The lock used to be reset from view() itself, so the admin screen never locked while
+    it was on display — which is precisely when it matters.
+    """
+    unlocked(kiosk, conn)
+    for tick in range(1, 200):                       # 200 redraws, no taps
+        view = kiosk.view(T0 + tick)
+    assert view.screen == vm.PIN
+
+
+def test_a_tap_postpones_the_lock(kiosk, conn):
+    unlocked(kiosk, conn)
+    for tick in range(1, 200):
+        kiosk.view(T0 + tick)
+        if tick % 30 == 0:                           # the nurse is actually using it
+            kiosk.touch(T0 + tick)
+    assert kiosk.view(T0 + 200).screen == vm.ADMIN
+
+
+def test_taking_the_enrolment_shots_does_not_lock_the_screen(kiosk, conn):
+    """Nobody touches the screen while the patient is being photographed."""
+    unlocked(kiosk, conn)
+    publish(conn, "ENROLL_COLLECTING", at=T0 + 1)
+    kiosk.poll(T0 + 1)
+    for tick in range(2, 200):
+        view = kiosk.view(T0 + tick)
+    assert view.screen == vm.ADMIN
+
+
+def test_back_returns_to_the_menu_instead_of_logging_out(kiosk, conn):
+    unlocked(kiosk, conn)
+    kiosk.open_admin_tab(vm.STATUS)
+    back = [b for b in kiosk.view(T0).buttons if b.kind == "cancel"][0]
+    kiosk.on_button(back, T0)
+    assert kiosk.local_screen == vm.ADMIN
+    assert kiosk.auth.is_unlocked(T0) is True
+
+
+# --------------------------------------------------------------------- revocation
+
+
+def test_revoking_removes_the_patient_and_bumps_the_gallery(kiosk, conn):
+    add_patient(conn, "BN001", "Nguyễn Thị Hà")
+    unlocked(kiosk, conn)
+    before = templates.gallery_version(conn)
+
+    kiosk.open_admin_tab(vm.PATIENTS)
+    kiosk.select_patient("BN001")
+    revoke = [b for b in kiosk.view(T0).buttons if b.kind == "revoke"][0]
+    kiosk.on_button(revoke, T0)
+
+    assert patients.get(conn, "BN001") is None
+    # The engine only reloads when the version changes, so this is what makes it stick.
+    assert templates.gallery_version(conn) > before
+    assert "BN001" in kiosk.view(T0).message
+
+
+def test_revoke_button_appears_only_with_a_patient_selected(kiosk, conn):
+    add_patient(conn, "BN001", "Nguyễn Thị Hà")
+    unlocked(kiosk, conn)
+    kiosk.open_admin_tab(vm.PATIENTS)
+    assert [b.kind for b in kiosk.view(T0).buttons] == ["cancel"]
+    kiosk.select_patient("BN001")
+    assert "revoke" in [b.kind for b in kiosk.view(T0).buttons]
+
+
+def test_empty_patient_list_says_so(kiosk, conn):
+    unlocked(kiosk, conn)
+    kiosk.open_admin_tab(vm.PATIENTS)
+    view = kiosk.view(T0)
+    assert view.fields == () and "Chưa có bệnh nhân" in view.message
+
+
+# --------------------------------------------------------------------- change PIN
+
+
+def test_change_pin_walks_old_new_repeat(kiosk, conn):
+    operator_id = unlocked(kiosk, conn)
+    kiosk.open_change_pin()
+    assert kiosk.submit_change_pin("123456", T0) == "new"
+    assert kiosk.submit_change_pin("654321", T0) == "repeat"
+    assert kiosk.submit_change_pin("654321", T0) == "done"
+    assert kiosk.local_screen == vm.ADMIN
+
+    kiosk.logout()
+    assert kiosk.unlock(operator_id, "123456", T0) is False      # the old PIN is gone
+    assert kiosk.unlock(operator_id, "654321", T0) is True
+
+
+def test_change_pin_rejects_a_mistyped_repeat(kiosk, conn):
+    """A typo here would lock the nurse out of the kiosk, with no way back in from it."""
+    operator_id = unlocked(kiosk, conn)
+    kiosk.open_change_pin()
+    kiosk.submit_change_pin("123456", T0)
+    kiosk.submit_change_pin("654321", T0)
+    assert kiosk.submit_change_pin("654322", T0) == "new"         # back a step, not saved
+    assert "không giống nhau" in kiosk.view(T0).message
+    kiosk.logout()
+    assert kiosk.unlock(operator_id, "123456", T0) is True        # PIN never changed
+
+
+def test_change_pin_rejects_a_wrong_current_pin(kiosk, conn):
+    operator_id = unlocked(kiosk, conn)
+    kiosk.open_change_pin()
+    kiosk.submit_change_pin("999999", T0)
+    kiosk.submit_change_pin("654321", T0)
+    assert kiosk.submit_change_pin("654321", T0) == "old"
+    assert "hiện tại không đúng" in kiosk.view(T0).message
+    kiosk.logout()
+    assert kiosk.unlock(operator_id, "123456", T0) is True

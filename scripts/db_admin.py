@@ -1,11 +1,13 @@
 """Local database admin CLI (runs on the Nano, Python 3.6).
 
-  python3 scripts/db_admin.py init            --config configs/nano.yaml
-  python3 scripts/db_admin.py create-operator --name "Nurse A"
-  python3 scripts/db_admin.py stats
-  python3 scripts/db_admin.py purge [--dry-run]
-  python3 scripts/db_admin.py export-sessions --csv out.csv [--days 7]
-  python3 scripts/db_admin.py check
+--config is a global option: it goes BEFORE the subcommand, not after.
+
+  python3 scripts/db_admin.py --config configs/nano.yaml init
+  python3 scripts/db_admin.py --config configs/nano.yaml create-operator --name "Nurse A"
+  python3 scripts/db_admin.py --config configs/nano.yaml stats
+  python3 scripts/db_admin.py --config configs/nano.yaml purge [--dry-run]
+  python3 scripts/db_admin.py --config configs/nano.yaml export-sessions --csv out.csv [--days 7]
+  python3 scripts/db_admin.py --config configs/nano.yaml check
 """
 import argparse
 import csv

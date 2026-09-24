@@ -137,6 +137,129 @@ def test_pin_pad_unlocks_the_admin_screen(kiosk):
     assert window.stack.currentWidget() is window.pages[vm.ADMIN]
 
 
+def buttons_of(window):
+    """Every button label on the page currently shown."""
+    from PyQt5 import QtWidgets
+
+    page = window.stack.currentWidget()
+    return {b.text(): b for b in page.findChildren(QtWidgets.QPushButton)}
+
+
+def tap_row(list_widget, index):
+    """A real tap on a list row.
+
+    Emitting itemClicked by hand would hand Qt a QListWidgetItem that Python owns, and the
+    handler rebuilds the list, so the item can be freed while the signal is still being
+    delivered. Clicking the pixels avoids that and is what the nurse's finger does.
+    """
+    from PyQt5 import QtCore, QtTest
+
+    item = list_widget.item(index)
+    centre = list_widget.visualItemRect(item).center()
+    QtTest.QTest.mouseClick(list_widget.viewport(), QtCore.Qt.LeftButton,
+                            QtCore.Qt.NoModifier, centre)
+
+
+def enrol_patient(controller, code="BN001", name="Nguyễn Thị Hà"):
+    """A patient the admin screens can actually list.
+
+    Created at the real clock, not the 1000.0 the state rows use: list_active() filters on
+    the 24 h TTL, and a patient stamped 1970 would already have expired.
+    """
+    from edgeface.storage import clock
+
+    with db.transaction(controller.conn):
+        patients.upsert_patient(controller.conn, code, name, 1990, "kiosk", clock.now())
+
+
+def enter_admin(window, controller, pin="123456"):
+    with db.transaction(controller.conn):
+        operators.create(controller.conn, "Nurse A", pin, iterations=1000, at=1000.0)
+    controller.open_pin()
+    window.refresh()
+    keys = buttons_of(window)
+    for digit in pin:
+        keys[digit].click()
+    window.refresh()
+    return window.stack.currentWidget()
+
+
+def test_admin_menu_opens_each_screen_by_tapping(kiosk):
+    """Walk the nurse's actual path: taps only, no controller calls.
+
+    The test this replaces asserted that the admin screen was reached and stopped there,
+    so it stayed green while every one of these entries was missing and the screen was a
+    dead end in the clinic.
+    """
+    window, controller = kiosk
+    enter_admin(window, controller)
+    labels = buttons_of(window)
+    for expected in ("Đăng ký bệnh nhân mới", "Bệnh nhân hôm nay",
+                     "Trạng thái hệ thống", "Đổi PIN", "Thoát quản trị"):
+        assert expected in labels, "admin menu is missing {}".format(expected)
+
+    # Enrolment: the form, with the four fields a nurse has to fill in.
+    labels["Đăng ký bệnh nhân mới"].click()
+    assert window.stack.currentWidget() is window.enroll_form
+    assert set(window.enroll_form.inputs) == {"patient_code", "full_name", "birth_year",
+                                              "appointment_code"}
+    buttons_of(window)["Huỷ"].click()
+
+    # Today's patients, with a real row in it.
+    enrol_patient(controller)
+    buttons_of(window)["Bệnh nhân hôm nay"].click()
+    page = window.stack.currentWidget()
+    assert page is window.pages[vm.PATIENTS]
+    assert page.rows.count() == 1 and "BN001" in page.rows.item(0).text()
+    buttons_of(window)["Quay lại"].click()
+
+    # System status: the rows must carry values, not just labels.
+    buttons_of(window)["Trạng thái hệ thống"].click()
+    assert window.stack.currentWidget() is window.pages[vm.STATUS]
+    assert "Phiên bản gallery" in rendered_text(window)
+    buttons_of(window)["Quay lại"].click()
+
+    # Change PIN.
+    buttons_of(window)["Đổi PIN"].click()
+    assert window.stack.currentWidget() is window.pages[vm.CHANGE_PIN]
+    assert "Nhập mã PIN hiện tại" in rendered_text(window)
+    buttons_of(window)["Quay lại"].click()
+
+    assert window.stack.currentWidget() is window.pages[vm.ADMIN]
+
+
+def test_enrolment_form_sends_the_command_to_the_engine(kiosk):
+    window, controller = kiosk
+    enter_admin(window, controller)
+    buttons_of(window)["Đăng ký bệnh nhân mới"].click()
+    form = window.enroll_form
+    form.inputs["patient_code"].setText("BN042")
+    form.inputs["full_name"].setText("Trần Văn B")
+    form.inputs["birth_year"].setText("1988")
+    buttons_of(window)["Bắt đầu chụp"].click()
+
+    command = kiosk_ipc.claim_commands(controller.conn, at=1001.0)[0]
+    assert command["type"] == "start_enroll"
+    assert command["payload"]["patient_code"] == "BN042"
+    assert command["payload"]["birth_year"] == 1988
+
+
+def test_tapping_a_patient_then_revoke_removes_them(kiosk):
+    window, controller = kiosk
+    enter_admin(window, controller)
+    enrol_patient(controller)
+    buttons_of(window)["Bệnh nhân hôm nay"].click()
+    page = window.stack.currentWidget()
+
+    assert "Thu hồi" not in buttons_of(window)       # nothing selected yet
+    tap_row(page.rows, 0)
+    window.refresh()
+    buttons_of(window)["Thu hồi"].click()
+
+    assert patients.get(controller.conn, "BN001") is None
+    assert "BN001" in rendered_text(window)
+
+
 def test_engine_silence_shows_the_error_screen(kiosk):
     window, controller = kiosk
     publish(controller.conn, "GUIDING", "STEP_CLOSER", at=1000.0)

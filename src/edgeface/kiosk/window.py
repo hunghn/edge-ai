@@ -142,6 +142,47 @@ class SearchPage(Page):
             self.results.addItem(item)
 
 
+class PatientListPage(Page):
+    """Today's patients, one per row, selectable so that Revoke has a target.
+
+    A QFormLayout cannot be tapped, which is why the admin screen could list patients but
+    never act on one.
+    """
+
+    patient_selected = QtCore.pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super(PatientListPage, self).__init__(parent)
+        self.selected = None
+        self._shown = None
+        self.rows = QtWidgets.QListWidget()
+        self.rows.itemClicked.connect(self._selected)
+        self.rows.itemActivated.connect(self._selected)
+        self.layout().insertWidget(3, self.rows, 1)
+
+    def _selected(self, item):
+        self.selected = item.data(QtCore.Qt.UserRole)
+        self.patient_selected.emit(self.selected)
+
+    def render(self, view):
+        super(PatientListPage, self).render(view)
+        rows = tuple(view.fields)
+        # Rebuild only when the list really changed. Clearing it on every refresh would
+        # delete the very item Qt is still delivering itemClicked for — which crashes the
+        # process the first time a nurse taps a patient — and would drop the highlight
+        # ten times a second.
+        if rows != self._shown:
+            self._shown = rows
+            self.rows.clear()
+            for code, name in rows:
+                item = QtWidgets.QListWidgetItem("{}  —  {}".format(code, name))
+                item.setData(QtCore.Qt.UserRole, code)
+                self.rows.addItem(item)
+        if self.selected not in [code for code, _name in rows]:
+            self.selected = None
+            self.rows.clearSelection()
+
+
 class PinPage(Page):
     """PIN entry with the on-screen number pad."""
 
@@ -257,8 +298,9 @@ class KioskWindow(QtWidgets.QMainWindow):
             vm.SEARCH: SearchPage(),
             vm.PIN: PinPage(pin_length=(cfg.get("auth") or {}).get("pin_length", 6)),
             vm.ADMIN: Page(),
-            vm.PATIENTS: Page(),
+            vm.PATIENTS: PatientListPage(),
             vm.STATUS: Page(),
+            vm.CHANGE_PIN: PinPage(pin_length=(cfg.get("auth") or {}).get("pin_length", 6)),
             vm.ENROLL: Page(with_preview=True, roi=roi),
         }
         for page in self.pages.values():
@@ -267,11 +309,17 @@ class KioskWindow(QtWidgets.QMainWindow):
         self.enroll_form = EnrollFormPage()
         self.enroll_form.submitted.connect(self._on_enroll_form)
         self.enroll_form.cancelled.connect(self._close_enroll_form)
+        # Filling in four fields can take longer than the idle lock, and typing is not a
+        # button press, so it has to postpone the lock explicitly.
+        for line in self.enroll_form.inputs.values():
+            line.textEdited.connect(lambda _text: self.controller.touch())
         self.stack.addWidget(self.enroll_form)
 
         self.pages[vm.SEARCH].query_changed.connect(self._on_query)
         self.pages[vm.SEARCH].patient_chosen.connect(self._on_patient_chosen)
         self.pages[vm.PIN].submitted.connect(self._on_pin)
+        self.pages[vm.CHANGE_PIN].submitted.connect(self._on_change_pin)
+        self.pages[vm.PATIENTS].patient_selected.connect(self._on_patient_selected)
         self.setCentralWidget(self.stack)
 
         self._poll = QtCore.QTimer(self)
@@ -311,6 +359,11 @@ class KioskWindow(QtWidgets.QMainWindow):
     def _on_button(self, button):
         if button.kind == "cancel" and self.controller.local_screen == vm.ADMIN:
             self.controller.logout()
+        elif button.kind == "enroll":
+            # The only menu entry the controller cannot serve: the form is a widget.
+            self.controller.touch()
+            self.open_enroll_form()
+            return
         else:
             self.controller.on_button(button)
         self.refresh()
@@ -331,6 +384,16 @@ class KioskWindow(QtWidgets.QMainWindow):
         self.controller.unlock(operators[0]["operator_id"], pin)
         self.refresh()
 
+    def _on_change_pin(self, pin):
+        self.controller.touch()
+        self.controller.submit_change_pin(pin)
+        self.refresh()
+
+    def _on_patient_selected(self, code):
+        self.controller.select_patient(code)
+        self.controller.touch()
+        self.refresh()
+
     def open_enroll_form(self):
         self.enroll_form.clear()
         self.enroll_form.render(vm.View(screen=vm.ENROLL, title=strings.ENROLL_TITLE,
@@ -338,6 +401,10 @@ class KioskWindow(QtWidgets.QMainWindow):
         self.stack.setCurrentWidget(self.enroll_form)
 
     def _close_enroll_form(self):
+        # refresh() refuses to redraw over the form (so a nurse typing is never
+        # interrupted), so leaving it has to move off the form first.
+        self.stack.setCurrentWidget(self.pages[vm.ADMIN])
+        self.controller.touch()
         self.refresh()
 
     def _on_enroll_form(self, form):
