@@ -47,8 +47,12 @@ def _warn_once(key, message):
 def _candidate(match):
     if match is None or match.top1_code is None:
         return None
+    # top2 rides along so the kiosk can show the nurse who else came close. Two patients
+    # who look alike is the failure this clinic actually has to catch, and it is
+    # invisible if only the winner ever reaches the screen.
     return {"code": match.top1_code, "score": match.top1_score, "margin": match.margin,
-            "votes": match.votes, "k": match.k}
+            "votes": match.votes, "k": match.k,
+            "top2_code": match.top2_code, "top2_score": match.top2_score}
 
 
 def _resolve(value, cfg, rule_id, match, note=None):

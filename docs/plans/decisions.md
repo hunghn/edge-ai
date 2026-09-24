@@ -12,7 +12,7 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | C-01 | Nơi đăng ký khuôn mặt (enrollment) | Ngay trên kiosk Nano, chạy được offline | 2026-09-17 | Người dùng |
 | C-02 | Server | Server tối giản tự viết: FastAPI + SQLite, chạy trên PC/laptop, có API sync và web quản trị | 2026-09-17 | Người dùng |
 | C-03 | Giao diện điều dưỡng | Cùng màn hình cảm ứng kiosk (PyQt5), phần quản trị khoá bằng PIN | 2026-09-17 | Người dùng |
-| C-04 | Hồ sơ bệnh nhân trên Nano | Mã BN, họ tên, năm sinh, mã lịch thủ thuật trong ngày, embedding; không lưu ảnh mặt trừ ảnh bằng chứng spoof; TTL 24 h | 2026-09-17 | Người dùng |
+| C-04 | Hồ sơ bệnh nhân trên Nano | Mã BN, họ tên, năm sinh, mã lịch thủ thuật trong ngày, embedding; không lưu ảnh mặt trừ ảnh bằng chứng spoof; TTL 24 h. **Đã sửa bởi C-24**: thêm 1 crop mặt cho mỗi BN đăng ký tại kiosk, phục vụ cảnh báo trùng | 2026-09-17 | Người dùng |
 | C-05 | Môi trường dev | `.venv` + torch CPU; kiểm tra Python 3.6 bằng `vermin` (không chạy pytest trên 3.6) | 2026-09-17 | Người dùng |
 | C-06 | Mean/std của 2d106det | mean 0, std 1: graph tự chuẩn hoá, đã kiểm tra trên model gốc | 2026-09-17 | Kiểm chứng (M1) |
 | C-07 | Tiền xử lý SCRFD | Letterbox giữ tỉ lệ, pad góc dưới phải; tensor RGB (x−127.5)/128 | 2026-09-17 | Port từ repo tham chiếu (M1) |
@@ -29,6 +29,7 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | C-21 | D-21 — mốc thời gian phiên | Chờ điều dưỡng **30 s**, nghỉ giữa hai lượt **3 s**, màn quản trị tự khoá sau **60 s** | 2026-09-22 | Người dùng |
 | C-22 | D-20 — enrollment | **Tự động chụp 5 mẫu**; nếu trùng khuôn mặt với BN khác thì **cảnh báo rồi vẫn cho lưu** sau khi điều dưỡng xác nhận lần hai | 2026-09-22 | Người dùng |
 | C-23 | D-27 — nguồn LBPH | **Tự viết bằng numpy** (`baselines/haar_lbph/lbph.py`). Nano không có `cv2.face`, pip không có wheel aarch64/py3.6 (chỉ có mã nguồn 154 MB của OpenCV 5). Có 10 test đối chứng với `cv2.face` trên máy dev | 2026-09-22 | Kiểm chứng ở M8 |
+| C-24 | Ảnh khuôn mặt bệnh nhân (đảo một phần **C-04**) | Lưu **1 crop 112×112 đã căn chỉnh** cho mỗi BN đăng ký tại kiosk, dạng BLOB trong bảng `patient_faces`, TTL bằng TTL bệnh nhân (24 h, xoá theo `ON DELETE CASCADE`). **Không bao giờ** vào outbox — server không nhận ảnh. Chỉ dùng cho màn cảnh báo trùng mặt. Lý do: embedding không dựng ngược thành ảnh, mà điều dưỡng cần thấy mặt mới phân biệt được "cùng người đăng ký hai lần" với "hai người giống nhau" | 2026-09-24 | Người dùng |
 | C-19 | Quy trình đo hiệu năng | Trước mỗi lần đo: `sudo jetson_clocks` (không tự áp dụng lại sau reboot). Engine **phải build lúc máy rảnh** — build lúc tải nặng làm TensorRT chọn tactic chậm hơn (ArcFace 18.08 ms so với 14.24 ms) | 2026-09-21 | Đo ở M2/M3 |
 | C-15 | D-16 — gộp 2 MiniFASNet | **Không gộp**, giữ 5 engine riêng: cả 5 engine chỉ tốn 1024 MB RSS so với ngân sách 2.0–2.6 GB | 2026-09-21 | Đo ở M2 |
 
@@ -51,6 +52,8 @@ Cách cập nhật: khi đã chốt, chuyển mục sang bảng "Đã chốt" v�
 | D-17 | S9 | Cách hiểu luật "3-of-5": ≥ 3 frame bầu cùng một BN, áp dụng cả khi chỉ có 3–4 frame | Như mô tả trong `stages/S9_match.md` §3.2 | M5 |
 | D-18 | M9 | FAR mục tiêu để chọn `match.threshold` (1e-3 hay 1e-4); mức tăng FRR tối đa chấp nhận khi thêm margin | FAR 1e-3 | M9 |
 | D-31 | S8 | Tính liên tục chủ thể trong cửa sổ thu thập: `iou_min`, `max_gap_s`, có dùng `cos_min` hay không | Cần chốt | M3 |
+| D-32 | Enroll | `enroll.duplicate_show_min` — dưới điểm này thì một BN chỉ là "gần nhất", không phải "giống". Trong lúc `null`, màn cảnh báo liệt kê tối đa 3 người gần nhất và ghi rõ ngưỡng chưa hiệu chuẩn | Hiệu chuẩn cùng D-01 ở M9 | M9 |
+| D-33 | S10 | `decision.lookalike_margin` — khoảng cách top1−top2 nhỏ tới mức nào thì cảnh báo "hai người giống nhau" lúc nhận diện. Hiện người gần nhì chỉ hiện dạng thông tin tham khảo | Hiệu chuẩn cùng D-02 ở M9 | M9 |
 
 ## Mở — ứng dụng
 

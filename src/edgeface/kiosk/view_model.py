@@ -20,6 +20,7 @@ ENROLL = "enroll"
 PATIENTS = "patients"
 STATUS = "status"
 CHANGE_PIN = "change_pin"
+DUPLICATE = "duplicate"
 ERROR = "error"
 
 # Severity drives the colour: ok (green), attention (amber), alarm (red).
@@ -103,6 +104,13 @@ def _await_nurse_view(state, patient, now, show_score=True):
 
     fields = candidate_fields(candidate, patient, show_score)
     fields += ((strings.LABEL_CONFIDENCE, confidence_label(decision)),)
+    # The runner-up, masked. Informational while D-33 is uncalibrated; once a lookalike
+    # margin is agreed this becomes a warning in its own right.
+    if show_score and candidate.get("top2_code") and candidate.get("top2_score") is not None:
+        from edgeface.kiosk.masking import mask_code
+
+        fields += ((strings.LABEL_LOOKALIKE, "{}  {:.2f}".format(
+            mask_code(candidate["top2_code"]), candidate["top2_score"])),)
     return View(screen=CANDIDATE, title=strings.CANDIDATE_TITLE,
                 message=strings.decision_hint(decision),
                 severity=OK if decision == "candidate_suggested" else ATTENTION,
@@ -126,6 +134,10 @@ def _enroll_view(state):
                     buttons=(Button("cancel", strings.BTN_BACK, None),))
     if engine_state == "ENROLL_REVIEW":
         warnings = payload.get("warnings") or []
+        duplicates = payload.get("duplicates") or []
+        if duplicates and ("duplicate_face" in warnings
+                           or "duplicate_unknown_threshold" in warnings):
+            return _duplicate_view(payload, warnings, duplicates)
         lines = []
         if "duplicate_face" in warnings:
             lines.append(strings.ENROLL_DUPLICATE.format(code=payload.get("duplicate_code")))
@@ -152,6 +164,37 @@ def _enroll_view(state):
                 show_preview=True,
                 fields=(("", strings.LABEL_PROGRESS.format(done=done, total=total)),),
                 buttons=(Button("enroll_cancel", strings.BTN_CANCEL, "enroll_cancel"),))
+
+
+def _duplicate_view(payload, warnings, duplicates):
+    """The warning screen: masked codes, scores, and a face for each one.
+
+    The faces are not in this View - it carries text only. The page reads them from the
+    database itself, so a picture never travels through the kiosk_state row.
+    """
+    from edgeface.kiosk.masking import mask_code
+
+    rows = tuple((mask_code(entry.get("code")), "{:.2f}".format(entry["score"]))
+                 for entry in duplicates if entry.get("score") is not None)
+    message = (strings.DUPLICATE_UNCALIBRATED
+               if "duplicate_unknown_threshold" in warnings else strings.DUPLICATE_HINT)
+    return View(screen=DUPLICATE, title=strings.DUPLICATE_TITLE, message=message,
+                severity=ATTENTION, fields=rows,
+                buttons=(Button("enroll_confirm", strings.BTN_SAVE_ANYWAY, "enroll_confirm"),
+                         Button("enroll_cancel", strings.BTN_CANCEL, "enroll_cancel", True)))
+
+
+def lookalike_code(state):
+    """The runner-up's real code, so the kiosk can fetch that one face. Never displayed."""
+    payload = (state or {}).get("payload") or {}
+    return ((payload.get("candidate") or {}).get("top2_code")) or None
+
+
+def duplicate_codes(state):
+    """The real (unmasked) codes the duplicate page needs to fetch faces for."""
+    payload = (state or {}).get("payload") or {}
+    return [entry.get("code") for entry in (payload.get("duplicates") or [])
+            if entry.get("code")]
 
 
 def build(state, now, patient=None, last_update=None, show_score=True):

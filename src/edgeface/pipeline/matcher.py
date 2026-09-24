@@ -90,16 +90,44 @@ def match(embeddings, gallery, cfg):
                        k=len(vectors), per_frame=per_frame, passed_threshold=passed)
 
 
-def best_match_for(vectors, gallery, cfg, exclude_code=None):
-    """Highest-scoring patient for a set of vectors, used by the enrollment duplicate check."""
-    if gallery.is_empty() or not len(vectors):
-        return None, None
+def _ranked_patients(vectors, gallery, cfg, exclude_code=None):
+    """[(code, score), ...] highest first, with one code dropped entirely.
+
+    The excluded patient is removed from the list rather than marked with a sentinel
+    score: cosine similarity is legitimately negative for unrelated faces, so any
+    "impossible" value used as a marker would also discard real patients.
+    """
     scores = np.asarray(vectors, dtype=np.float32).dot(gallery.matrix.T)
     per_patient = aggregate_per_patient(scores, gallery.owner, gallery.group_offsets(),
                                         cfg["match"].get("template_agg", "max"))
     best_per_patient = per_patient.max(axis=0)
-    if exclude_code is not None and exclude_code in gallery.codes:
-        best_per_patient = best_per_patient.copy()
-        best_per_patient[gallery.codes.index(exclude_code)] = -1.0
-    index = int(np.argmax(best_per_patient))
-    return gallery.codes[index], float(best_per_patient[index])
+    ranked = [(gallery.codes[int(i)], float(best_per_patient[i]))
+              for i in np.argsort(best_per_patient)[::-1]]
+    if exclude_code is not None:
+        ranked = [row for row in ranked if row[0] != exclude_code]
+    return ranked
+
+
+def best_match_for(vectors, gallery, cfg, exclude_code=None):
+    """Highest-scoring patient for a set of vectors, used by the enrollment duplicate check."""
+    if gallery.is_empty() or not len(vectors):
+        return None, None
+    ranked = _ranked_patients(vectors, gallery, cfg, exclude_code)
+    return ranked[0] if ranked else (None, None)
+
+
+def top_matches_for(vectors, gallery, cfg, limit=3, min_score=None, exclude_code=None):
+    """The closest patients, highest first: [(code, score), ...].
+
+    Two or more people can look alike, so the duplicate warning needs a list rather than
+    the single best match. `min_score` filters out patients who merely happen to be the
+    nearest in a small gallery; while it is None (D-32 uncalibrated) the caller shows the
+    closest few and says on screen that the threshold is not calibrated, rather than
+    implying that everyone listed is a real duplicate.
+    """
+    if gallery.is_empty() or not len(vectors) or limit <= 0:
+        return []
+    ranked = _ranked_patients(vectors, gallery, cfg, exclude_code)
+    if min_score is not None:
+        ranked = [row for row in ranked if row[1] >= min_score]
+    return ranked[:limit]

@@ -23,3 +23,8 @@ QListWidget { font-size: 24px; background: #172030; border: 1px solid #2c3a4f;
               border-radius: 8px; }
 QListWidget::item { padding: 14px; }
 QListWidget::item:selected { background: #24405f; }
+
+/* Duplicate warning: the face is the evidence, so give it a frame of its own and keep
+   it visible even when there is no picture to put in it. */
+QLabel#duplicateFace { background: #172030; border: 1px solid #3a4d68; border-radius: 6px;
+                       font-size: 14px; color: #8d9cb3; }

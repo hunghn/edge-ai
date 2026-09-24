@@ -21,6 +21,7 @@ ENROLL_TITLE = "Đăng ký khuôn mặt"
 PATIENTS_TITLE = "Bệnh nhân hôm nay"
 STATUS_TITLE = "Trạng thái hệ thống"
 CHANGE_PIN_TITLE = "Đổi mã PIN"
+DUPLICATE_TITLE = "Khuôn mặt này đã có trong hệ thống"
 ERROR_TITLE = "Hệ thống tạm dừng"
 
 # One line per guidance code from the pipeline. Phrased as an instruction.
@@ -118,6 +119,15 @@ PATIENTS_EMPTY = "Chưa có bệnh nhân nào được đăng ký hôm nay."
 
 # Enrollment
 ENROLL_DUPLICATE = "Khuôn mặt này giống bệnh nhân {code}. Vui lòng kiểm tra kỹ trước khi lưu."
+
+# The duplicate screen. Names are never shown: the nurse has to answer "is this the same
+# person", and the face answers that - the other patient's name is not theirs to read.
+DUPLICATE_HINT = "So sánh khuôn mặt bên dưới. Nếu là cùng một người, hãy huỷ và tra cứu mã cũ."
+DUPLICATE_UNCALIBRATED = "Ngưỡng so khớp chưa hiệu chuẩn — đây là những người gần nhất, không phải kết luận."
+DUPLICATE_NO_PHOTO = "chưa có ảnh"
+DUPLICATE_MASKED_NAME = "Tên: ***"
+BTN_SAVE_ANYWAY = "Vẫn lưu"
+LABEL_LOOKALIKE = "Người gần nhì"
 ENROLL_DUPLICATE_UNKNOWN = "Bệnh nhân giống nhất hiện có: {code}. Ngưỡng so khớp chưa hiệu chuẩn."
 ENROLL_INCONSISTENT = "Các ảnh chụp không đồng nhất. Nên chụp lại."
 ENROLL_ERRORS = {

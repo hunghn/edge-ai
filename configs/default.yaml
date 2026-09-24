@@ -114,6 +114,9 @@ enroll:                           # C-22 (D-20)
   timeout_s: 30
   duplicate_policy: warn          # warn | block
   duplicate_threshold: null       # TBD: uses match.threshold once D-01 is calibrated
+  duplicate_list_max: 3           # how many similar patients the warning screen lists
+  duplicate_show_min: null        # TBD (D-32): below this a patient is not "similar",
+                                  # only "nearest". While null the screen says so.
   self_consistency_min: null      # TBD: mean cosine between the new templates
 
 sync:                             # server connection; secrets come from the environment

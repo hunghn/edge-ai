@@ -200,6 +200,69 @@ class PatientListPage(Page):
             self.rows.clearSelection()
 
 
+class DuplicatePage(Page):
+    """The face-already-enrolled warning: one row per similar patient.
+
+    A face and a masked code, never a name. The nurse only has to answer "is this the
+    same person", and the picture answers it; the other patient's name would identify
+    somebody who is not here and did not agree to appear on this screen.
+    """
+
+    THUMB = 96
+
+    def __init__(self, parent=None):
+        super(DuplicatePage, self).__init__(parent)
+        self.faces = []                 # [jpeg or None], row order, set by the window
+        self._shown = None
+        self.rows = QtWidgets.QWidget()
+        self._rows_layout = QtWidgets.QVBoxLayout(self.rows)
+        self._rows_layout.setSpacing(12)
+        self.layout().insertWidget(3, self.rows, 1)
+
+    def _row(self, masked_code, score, jpeg):
+        line = QtWidgets.QWidget()
+        box = QtWidgets.QHBoxLayout(line)
+        box.setSpacing(16)
+
+        thumb = QtWidgets.QLabel()
+        thumb.setObjectName("duplicateFace")
+        thumb.setFixedSize(self.THUMB, self.THUMB)
+        thumb.setAlignment(QtCore.Qt.AlignCenter)
+        pixmap = QtGui.QPixmap()
+        if jpeg and pixmap.loadFromData(jpeg, "JPG"):
+            thumb.setPixmap(pixmap.scaled(self.THUMB, self.THUMB, QtCore.Qt.KeepAspectRatio,
+                                          QtCore.Qt.SmoothTransformation))
+        else:
+            # Patients pulled from the server arrive as embeddings only (C-24 covers the
+            # kiosk side). An empty frame is honest; a missing row would not be.
+            thumb.setText(strings.DUPLICATE_NO_PHOTO)
+            thumb.setWordWrap(True)
+        box.addWidget(thumb)
+
+        text = QtWidgets.QLabel("{}\n{}\n{}".format(masked_code,
+                                                     strings.DUPLICATE_MASKED_NAME,
+                                                     score))
+        text.setObjectName("fieldValue")
+        box.addWidget(text, 1)
+        return line
+
+    def render(self, view):
+        super(DuplicatePage, self).render(view)
+        key = (tuple(view.fields), tuple(f is not None for f in self.faces))
+        if key == self._shown:
+            return                       # same as last redraw; see the button-rebuild note
+        self._shown = key
+        while self._rows_layout.count():
+            item = self._rows_layout.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        for index, (masked_code, score) in enumerate(view.fields):
+            # self.faces is a list in the same order as the rows, with None where a
+            # patient has no picture, so row and face always belong together.
+            jpeg = self.faces[index] if index < len(self.faces) else None
+            self._rows_layout.addWidget(self._row(masked_code, score, jpeg))
+
+
 class PinPage(Page):
     """PIN entry with the on-screen number pad."""
 
@@ -318,6 +381,7 @@ class KioskWindow(QtWidgets.QMainWindow):
             vm.PATIENTS: PatientListPage(),
             vm.STATUS: Page(),
             vm.CHANGE_PIN: PinPage(pin_length=(cfg.get("auth") or {}).get("pin_length", 6)),
+            vm.DUPLICATE: DuplicatePage(),
             vm.ENROLL: Page(with_preview=True, roi=roi),
         }
         for page in self.pages.values():
@@ -366,6 +430,8 @@ class KioskWindow(QtWidgets.QMainWindow):
         page = self.pages.get(view.screen, self.pages[vm.IDLE])
         if view.screen == vm.ADMIN and self.stack.currentWidget() is self.enroll_form:
             return                                   # the nurse is filling in the form
+        if view.screen == vm.DUPLICATE:
+            page.faces = self.controller.duplicate_faces()
         page.render(view)
         self.stack.setCurrentWidget(page)
 

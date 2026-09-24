@@ -407,3 +407,83 @@ def test_search_results_survive_a_redraw(kiosk):
     for _ in range(5):
         window.refresh()
     assert page.results.item(0) is row
+
+
+def _enrol_with_face(controller, code, name, pixel):
+    """A patient who has a stored enrolment crop."""
+    import numpy as np
+    from edgeface.storage import clock, faces
+
+    with db.transaction(controller.conn):
+        patients.upsert_patient(controller.conn, code, name, 1990, "kiosk", clock.now())
+        faces.save(controller.conn, code,
+                   faces.encode(np.full((112, 112, 3), pixel, dtype=np.uint8)), clock.now())
+
+
+def _publish_duplicates(controller, entries):
+    publish(controller.conn, "ENROLL_REVIEW", None, {
+        "n_templates": 5, "warnings": ["duplicate_unknown_threshold"],
+        "duplicates": [{"code": code, "score": score} for code, score in entries]})
+
+
+def test_the_duplicate_warning_shows_a_face_per_patient(kiosk):
+    window, controller = kiosk
+    _enrol_with_face(controller, "BN000201", "Nguyễn Thị Hà", 40)
+    _enrol_with_face(controller, "BN000147", "Trần Văn B", 200)
+    _publish_duplicates(controller, [("BN000201", 0.91), ("BN000147", 0.88)])
+    window.refresh()
+
+    page = window.stack.currentWidget()
+    assert page is window.pages[vm.DUPLICATE]
+    assert page._rows_layout.count() == 2
+    text = rendered_text(window)
+    assert "BN****01" in text and "BN****47" in text
+    assert "0.91" in text and "0.88" in text
+
+
+def test_the_duplicate_warning_never_shows_the_other_patient_name(kiosk):
+    """The face answers "is this the same person". The name is not the nurse's to read."""
+    window, controller = kiosk
+    _enrol_with_face(controller, "BN000201", "Nguyễn Thị Hà", 40)
+    _publish_duplicates(controller, [("BN000201", 0.91)])
+    window.refresh()
+
+    text = rendered_text(window)
+    assert "Nguyễn Thị Hà" not in text
+    assert "BN000201" not in text          # the full code is masked too
+    assert "***" in text
+
+
+def test_a_patient_without_a_picture_keeps_its_own_row(kiosk):
+    """Server-sourced patients have no crop. The row must still be theirs.
+
+    A dict keyed by code would drop this patient and shift the pictures up, putting one
+    person's face beside another person's code.
+    """
+    from edgeface.storage import clock
+
+    window, controller = kiosk
+    with db.transaction(controller.conn):        # no face for this one
+        patients.upsert_patient(controller.conn, "BN000111", "A", 1990, "server", clock.now())
+    _enrol_with_face(controller, "BN000222", "B", 200)
+    _publish_duplicates(controller, [("BN000111", 0.95), ("BN000222", 0.80)])
+    window.refresh()
+
+    page = window.stack.currentWidget()
+    assert controller.duplicate_faces()[0] is None       # the photoless patient, first
+    assert controller.duplicate_faces()[1] is not None
+    assert page._rows_layout.count() == 2
+    assert "chưa có ảnh" in rendered_text(window)
+
+
+def test_saving_anyway_reaches_the_engine(kiosk):
+    """C-22: a duplicate is a warning, not a block - the nurse can still go ahead."""
+    window, controller = kiosk
+    _enrol_with_face(controller, "BN000201", "Nguyễn Thị Hà", 40)
+    _publish_duplicates(controller, [("BN000201", 0.91)])
+    window.refresh()
+
+    assert "Vẫn lưu" in buttons_of(window) and "Huỷ" in buttons_of(window)
+    buttons_of(window)["Vẫn lưu"].click()
+    sent = kiosk_ipc.claim_commands(controller.conn, at=1001.0)
+    assert [c["type"] for c in sent] == ["enroll_confirm"]

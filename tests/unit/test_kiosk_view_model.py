@@ -152,3 +152,29 @@ def test_enrollment_progress_and_review():
 def test_enrollment_error_message():
     view = vm.build(state("ENROLL_ERROR", payload={"reason": "timeout"}), T0)
     assert view.message == strings.ENROLL_ERRORS["timeout"]
+
+
+def test_the_card_names_the_runner_up_without_naming_them():
+    """Two patients who look alike is the failure this clinic has to catch, and it is
+    invisible if only the winner reaches the screen. The code is masked all the same."""
+    payload = candidate_payload()
+    payload["candidate"]["top2_code"] = "BN000147"
+    payload["candidate"]["top2_score"] = 0.79
+    view = vm.build(state("AWAIT_NURSE", payload=payload), T0, {})
+    rows = dict(view.fields)
+    assert rows[strings.LABEL_LOOKALIKE] == "BN****47  0.79"
+    assert "BN000147" not in " ".join(str(v) for v in rows.values())
+
+
+def test_no_runner_up_row_when_the_gallery_holds_one_patient():
+    """top2 is None with a single enrolled patient, which is the state of the kiosk now."""
+    view = vm.build(state("AWAIT_NURSE", payload=candidate_payload()), T0, {})
+    assert strings.LABEL_LOOKALIKE not in dict(view.fields)
+
+
+def test_switching_the_score_off_hides_the_runner_up_too():
+    payload = candidate_payload()
+    payload["candidate"]["top2_code"] = "BN000147"
+    payload["candidate"]["top2_score"] = 0.79
+    view = vm.build(state("AWAIT_NURSE", payload=payload), T0, {}, show_score=False)
+    assert strings.LABEL_LOOKALIKE not in dict(view.fields)

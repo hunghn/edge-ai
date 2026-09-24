@@ -9,7 +9,8 @@ import os
 from edgeface.common.log import get_logger
 from edgeface.kiosk import view_model
 from edgeface.kiosk.auth import AdminAuth
-from edgeface.storage import clock, kiosk_ipc, operators, outbox, patients, templates
+from edgeface.storage import (clock, faces, kiosk_ipc, operators, outbox, patients,
+                              templates)
 from edgeface.storage.db import get_meta, transaction
 
 LOG = get_logger("kiosk")
@@ -270,6 +271,24 @@ class KioskController(object):
         LOG.warning("nurse revoked patient %s", code)
         self.local_context = {"notice": strings.REVOKE_DONE.format(code=code)}
         return True
+
+    def duplicate_faces(self):
+        """Pictures for the duplicate warning, in the engine's order, None where missing.
+
+        A list rather than a dict keyed by code: the View carries masked codes, so the
+        page can only pair a face with a row by position, and a dict would both reorder
+        the rows and silently drop the patients who have no picture - putting one
+        patient's face beside another patient's code on the one screen where that would
+        be worst.
+
+        The codes come from the state row; the pictures are read from the database here
+        in the kiosk process, so no face is ever written into kiosk_state.
+        """
+        codes = view_model.duplicate_codes(self.state)
+        if not codes:
+            return []
+        found = faces.get_many(self.conn, codes)
+        return [found.get(code) for code in codes]
 
     def today_patients(self, now=None):
         now = clock.now() if now is None else now

@@ -19,14 +19,19 @@ def test_pragmas_are_set(conn):
 
 
 def test_migrate_is_idempotent(tmp_path):
+    # Read the expected versions from the schema directory rather than pinning numbers,
+    # so adding a migration does not fail this test for the wrong reason.
+    expected = [version for version, _path in db.migration_files()]
+    assert expected == sorted(expected) and expected[0] == 1
+
     path = str(tmp_path / "edge.db")
     first = db.connect(path)
-    assert db.migrate(first) == [1]
+    assert db.migrate(first) == expected
     assert db.migrate(first) == []          # nothing pending the second time
-    assert db.schema_version(first) == 1
+    assert db.schema_version(first) == expected[-1]
     first.close()
     second = db.open_db(path)               # a second process opening it changes nothing
-    assert db.schema_version(second) == 1
+    assert db.schema_version(second) == expected[-1]
     second.close()
 
 

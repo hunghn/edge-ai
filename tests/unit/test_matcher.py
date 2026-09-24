@@ -156,3 +156,55 @@ def test_best_match_for_enrollment_duplicate_check(conn, cfg):
     other, _ = matcher.best_match_for([noisy(unit(2), 0.05, 7)], gallery, cfg,
                                       exclude_code="BN002")
     assert other == "BN001"
+
+
+def test_top_matches_returns_the_closest_first(conn, cfg):
+    """Two or more people can look alike, so the duplicate check needs a list."""
+    base = unit(1)
+    enroll(conn, "BN001", [base])                       # identical
+    enroll(conn, "BN002", [noisy(base, 0.5, 2)])        # close
+    enroll(conn, "BN003", [unit(9)])                    # unrelated
+    found = matcher.top_matches_for([base], loaded_gallery(conn), cfg, limit=3)
+
+    assert [code for code, _score in found] == ["BN001", "BN002", "BN003"]
+    assert found[0][1] > found[1][1] > found[2][1]
+
+
+def test_top_matches_leaves_out_the_patient_being_enrolled(conn, cfg):
+    """Re-enrolling somebody must not report them as their own duplicate."""
+    base = unit(1)
+    enroll(conn, "BN001", [base])
+    enroll(conn, "BN002", [unit(9)])
+    found = matcher.top_matches_for([base], loaded_gallery(conn), cfg, limit=3,
+                                    exclude_code="BN001")
+    assert [code for code, _score in found] == ["BN002"]
+
+
+def test_top_matches_stops_at_the_threshold_once_there_is_one(conn, cfg):
+    """While D-32 is null every near patient is listed; with a threshold, only real ones."""
+    base = unit(1)
+    enroll(conn, "BN001", [base])
+    enroll(conn, "BN002", [unit(9)])
+    gallery = loaded_gallery(conn)
+
+    assert len(matcher.top_matches_for([base], gallery, cfg, 3, min_score=None)) == 2
+    assert len(matcher.top_matches_for([base], gallery, cfg, 3, min_score=0.9)) == 1
+
+
+def test_top_matches_copes_with_a_gallery_smaller_than_the_limit(conn, cfg):
+    enroll(conn, "BN001", [unit(1)])
+    assert len(matcher.top_matches_for([unit(1)], loaded_gallery(conn), cfg, limit=5)) == 1
+
+
+def test_a_negative_similarity_is_still_a_patient(conn, cfg):
+    """Cosine is legitimately negative for unrelated faces.
+
+    An earlier version marked the excluded patient with -1.0 and then dropped everything
+    below zero, which quietly discarded real patients whose similarity happened to be
+    negative — so the duplicate list could come back empty for the wrong reason.
+    """
+    base = unit(1)
+    enroll(conn, "BN001", [-base])                 # cosine exactly -1.0 against `base`
+    found = matcher.top_matches_for([base], loaded_gallery(conn), cfg, limit=3)
+    assert [code for code, _score in found] == ["BN001"]
+    assert found[0][1] == pytest.approx(-1.0, abs=1e-5)

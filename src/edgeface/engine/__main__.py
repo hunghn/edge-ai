@@ -32,7 +32,7 @@ from edgeface.pipeline import detect as detect_stage
 from edgeface.pipeline import matcher
 from edgeface.pipeline.capture import CaptureThread, lockstep_from_config, source_from_config
 from edgeface.pipeline.decision import SessionEvidence, decide
-from edgeface.storage import clock, db, evidence, metrics, outbox, sessions
+from edgeface.storage import clock, db, evidence, faces, metrics, outbox, sessions
 
 LOG = get_logger("engine")
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -65,10 +65,33 @@ class Engine(object):
         self.face_box = None
         self.face_box_good = False
         self._last_box_detect = None
+        self.enroll_face = None                     # JPEG of this enrolment's best crop
+        self._enroll_face_q = -1.0
 
         closed = sessions.close_dangling(self.conn)   # sessions left open by a crash
         if closed:
             LOG.warning("closed %d session(s) left open by a previous run", closed)
+
+    # ------------------------------------------------------------------ enrolment face
+    def _forget_enroll_face(self):
+        self.enroll_face = None
+        self._enroll_face_q = -1.0
+
+    def _remember_enroll_face(self, outcome):
+        """Keep the best aligned crop of this enrolment, for the duplicate warning.
+
+        The best_frame collector stores embeddings and boxes, not pixels, so the crop has
+        to be held separately. Only during an enrolment: an identification never keeps a
+        picture of anybody.
+        """
+        if not self.session.is_enrolling() or outcome.obs.aligned is None:
+            return
+        if outcome.guidance is not None:
+            return                                  # a frame the gates turned away
+        quality = outcome.obs.quality
+        if self.enroll_face is None or quality is None or quality >= self._enroll_face_q:
+            self.enroll_face = faces.encode(outcome.obs.aligned)
+            self._enroll_face_q = -1.0 if quality is None else float(quality)
 
     # ------------------------------------------------------------------ face outline
     def _remember_box(self, detection, image_shape, good):
@@ -209,6 +232,7 @@ class Engine(object):
                 self.conn, sessions.KIND_ENROLL, now,
                 ttl_days=self.cfg["retention"]["sessions_days"])
         self.session.kind = sessions.KIND_ENROLL
+        self._forget_enroll_face()     # never carry a crop over from the previous patient
         LOG.info("enrollment started for %s", form.get("patient_code"))
 
     def _save_enroll(self, payload, now):
@@ -220,6 +244,10 @@ class Engine(object):
                 "n_templates": review.n_templates, "warnings": review.warnings,
                 "duplicate_code": review.duplicate_code,
                 "duplicate_score": review.duplicate_score,
+                # Codes and scores only. The kiosk reads the pictures from the database
+                # itself, so no face travels through the state row.
+                "duplicates": [{"code": code, "score": score}
+                               for code, score in review.duplicates],
                 "self_consistency": review.self_consistency, "blocked": review.blocked}, now,
                 force=True)
             return
@@ -227,10 +255,12 @@ class Engine(object):
         result = enroll_mod.commit(self.conn, form, embeddings, self.cfg,
                                    self.models["recognizer_sha256"],
                                    operator_id=(form or {}).get("operator_id"), now=now,
-                                   session_id=self.session.session_id)
+                                   session_id=self.session.session_id,
+                                   face_jpeg=self.enroll_face)
         self._close_session({"nurse_action": "confirm",
                              "confirmed_code": form["patient_code"]}, now)
         self.session.session_id = None
+        self._forget_enroll_face()     # it is in the database now; drop the copy in RAM
         self.gallery.refresh_if_changed(self.conn, now)
         LOG.info("enrollment committed: %s", result)
 
@@ -238,6 +268,7 @@ class Engine(object):
         if self.session.session_id is not None:
             self._close_session({"nurse_action": "cancel"}, now)
             self.session.session_id = None
+        self._forget_enroll_face()     # an abandoned enrolment leaves no face behind
 
     def _execute(self, actions, now):
         handlers = {
@@ -290,6 +321,7 @@ class Engine(object):
                     self.worst_spoof_frame = (frame, outcome.obs.det)
             self._remember_box(outcome.obs.det, frame.image.shape,
                                good=outcome.guidance is None)
+            self._remember_enroll_face(outcome)
             self._execute(self.session.on_frame(outcome, frame.ts), frame.ts)
         else:
             self._detect_box_only(frame, now)

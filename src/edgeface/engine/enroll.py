@@ -12,7 +12,7 @@ import numpy as np
 
 from edgeface.common.log import get_logger
 from edgeface.pipeline import matcher
-from edgeface.storage import clock, patients, templates
+from edgeface.storage import clock, faces, patients, templates
 from edgeface.storage.db import transaction
 from edgeface.storage.outbox import enqueue
 
@@ -22,8 +22,11 @@ REQUIRED_FIELDS = ("patient_code", "full_name")
 
 EnrollReview = namedtuple("EnrollReview", [
     "form", "n_templates", "duplicate_code", "duplicate_score", "self_consistency",
-    "blocked", "warnings",
+    "blocked", "warnings", "duplicates",
 ])
+# duplicates: [(patient_code, score), ...], closest first. Two or more people can look
+# alike, so the nurse is shown a list, not just the single nearest patient.
+EnrollReview.__new__.__defaults__ = ((),)
 
 
 def validate_form(form, conn=None):
@@ -69,8 +72,12 @@ def review(form, embeddings, gallery, cfg):
     if consistency is not None and min_consistency is not None and consistency < min_consistency:
         warnings.append("inconsistent_capture")
 
-    duplicate_code, duplicate_score = matcher.best_match_for(
-        vectors, gallery, cfg, exclude_code=form.get("patient_code"))
+    duplicates = matcher.top_matches_for(
+        vectors, gallery, cfg, limit=enroll_cfg.get("duplicate_list_max", 3),
+        min_score=enroll_cfg.get("duplicate_show_min"),
+        exclude_code=form.get("patient_code"))
+    duplicate_code, duplicate_score = duplicates[0] if duplicates else (None, None)
+
     threshold = enroll_cfg.get("duplicate_threshold")
     if threshold is None:
         threshold = cfg["match"].get("threshold")
@@ -79,21 +86,27 @@ def review(form, embeddings, gallery, cfg):
     if is_duplicate:
         warnings.append("duplicate_face")
     elif threshold is None and duplicate_code is not None:
-        # No calibrated threshold yet (D-01): show the closest patient and let the nurse judge.
+        # No calibrated threshold yet (D-01): show the closest patients and let the nurse
+        # judge. The screen says the threshold is uncalibrated rather than implying that
+        # everyone on the list is a genuine duplicate.
         warnings.append("duplicate_unknown_threshold")
 
     blocked = is_duplicate and enroll_cfg.get("duplicate_policy") == "block"
     return EnrollReview(form=form, n_templates=len(vectors), duplicate_code=duplicate_code,
                         duplicate_score=duplicate_score, self_consistency=consistency,
-                        blocked=blocked, warnings=warnings)
+                        blocked=blocked, warnings=warnings, duplicates=tuple(duplicates))
 
 
 def commit(conn, form, embeddings, cfg, recognizer_sha256, operator_id=None, now=None,
-           session_id=None):
+           session_id=None, face_jpeg=None):
     """Write the patient, the appointment and the templates in one transaction.
 
     The outbox event goes in the same transaction: either the server hears about this
     enrollment or the enrollment did not happen.
+
+    `face_jpeg` is the enrolment crop kept for the duplicate warning (C-24). It is
+    written to the database and deliberately left out of the outbox event: the face
+    stays on this machine.
     """
     now = clock.now() if now is None else now
     ttl_hours = cfg["retention"]["patients_hours"]
@@ -109,6 +122,12 @@ def commit(conn, form, embeddings, cfg, recognizer_sha256, operator_id=None, now
                                         form.get("procedure_date") or clock.local_date(now))
         templates.add_templates(conn, form["patient_code"], vectors, recognizer_sha256,
                                 qualities, now)
+        if face_jpeg:
+            faces.save(conn, form["patient_code"], face_jpeg, now,
+                       now + ttl_hours * 3600.0)
+        # Note what this payload does NOT contain: the face. Templates are vectors and
+        # cannot be turned back into a picture, and that property is the reason the
+        # server never receives one.
         event_id = enqueue(conn, "enrollment.created", {
             "patient_code": form["patient_code"],
             "full_name": form["full_name"],
