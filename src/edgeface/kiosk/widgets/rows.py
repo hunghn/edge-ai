@@ -8,7 +8,7 @@ which is what both the tests and tools/viz/kiosk_screens.py drive the list throu
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from edgeface.kiosk import theme
-from edgeface.kiosk.widgets import icons
+from edgeface.kiosk.widgets import components, icons
 
 EXTRAS = QtCore.Qt.UserRole + 1          # dict: name, code, sub, trailing, tone, trash
 
@@ -48,7 +48,7 @@ class PatientDelegate(QtWidgets.QStyledItemDelegate):
         painter.setPen(QtCore.Qt.NoPen)
         painter.setBrush(theme.qcolor("primary" if selected else "surface_3"))
         painter.drawEllipse(centre, AVATAR / 2.0, AVATAR / 2.0)
-        initials = "".join(part[0] for part in (extras.get("name") or "").split()[-2:])
+        initials = components.initials(extras.get("name"))
         font = QtGui.QFont(option.font)
         font.setPixelSize(20)
         font.setWeight(QtGui.QFont.Medium)
@@ -56,7 +56,7 @@ class PatientDelegate(QtWidgets.QStyledItemDelegate):
         painter.setPen(theme.qcolor("on_primary" if selected else "on_surface_var"))
         painter.drawText(QtCore.QRectF(centre.x() - AVATAR / 2.0,
                                        centre.y() - AVATAR / 2.0, AVATAR, AVATAR),
-                         QtCore.Qt.AlignCenter, initials.upper())
+                         QtCore.Qt.AlignCenter, initials)
 
         text_left = rect.left() + PAD + AVATAR + PAD
         trailing = extras.get("trailing") or ""

@@ -34,11 +34,123 @@ ALARM = "alarm"
 Button = namedtuple("Button", ["kind", "label", "command", "primary"])
 Button.__new__.__defaults__ = (None, False)
 
+# steps    : one of DONE/NOW/TODO per pipeline gate, for the guidance stepper
+# progress : (taken, wanted) for the shot counter, or None
+# chips    : ((text, tone), ...) for the app bar
+# metrics  : ((label, value, tone), ...) - why a frame was turned away
+# camera   : (left tag, right tag) written over the preview, or ()
+# Everything after session_id was added for the Material redesign and defaults to empty,
+# so a View built by an older caller, or from an engine that sends no telemetry, is
+# still a valid View and the page simply leaves those panels out.
 View = namedtuple("View", [
     "screen", "title", "message", "severity", "buttons", "fields", "show_preview",
-    "countdown_s", "session_id",
+    "countdown_s", "session_id", "steps", "progress", "chips", "metrics", "camera",
 ])
-View.__new__.__defaults__ = (None, None, OK, (), (), False, None, None)
+View.__new__.__defaults__ = (None, None, OK, (), (), False, None, None, (), None, (),
+                             (), ())
+
+# Stepper states, mirrored in widgets/stepper.py.
+DONE = "done"
+NOW = "now"
+TODO = "todo"
+
+# Which gate a guidance code belongs to. The code is more precise than the stage: S5
+# runs both the pose check and the image quality check, and they are different steps to
+# the person standing there.
+STEP_OF_GUIDANCE = {
+    "NO_FACE": 0, "INVALID_BBOX": 0,
+    "MOVE_TO_CENTER": 1, "STEP_CLOSER": 1,
+    "LOOK_STRAIGHT": 2,
+    "SPOOF_SUSPECT": 3, "TOO_DARK": 3, "TOO_BRIGHT": 3, "HOLD_STILL": 3,
+    "EMBED_INVALID": 4,
+}
+STEP_OF_STAGE = {"S1": 0, "S2": 1, "S3": 2, "S4": 3, "S5": 3, "S6": 3, "S7": 4, "S8": 4}
+N_STEPS = 5
+
+
+def steps_for(guidance_code, telemetry):
+    """Mark the gate being worked on, and everything before it as passed."""
+    active = STEP_OF_GUIDANCE.get(guidance_code)
+    if active is None:
+        active = STEP_OF_STAGE.get((telemetry or {}).get("stage"))
+    if active is None:
+        active = N_STEPS - 1          # nothing to complain about: matching is all that's left
+    return tuple(DONE if index < active else (NOW if index == active else TODO)
+                 for index in range(N_STEPS))
+
+
+def _limit(cfg, *path):
+    node = cfg or {}
+    for key in path:
+        node = (node or {}).get(key) if hasattr(node, "get") else None
+    return node
+
+
+def quality_metrics(telemetry, cfg):
+    """Each quality number against the threshold it had to clear.
+
+    Without the config there is nothing to compare against, so the rows are left out
+    rather than shown as bare numbers a nurse cannot act on.
+    """
+    if not telemetry or not cfg:
+        return ()
+    rows = []
+    blur, blur_min = telemetry.get("blur"), _limit(cfg, "iqa", "blur_min")
+    if blur is not None and blur_min is not None:
+        passed = blur >= blur_min
+        rows.append((strings.METRIC_BLUR,
+                     strings.METRIC_PASSED.format(value=blur) if passed
+                     else strings.METRIC_BELOW.format(value=blur, limit=int(blur_min)),
+                     OK if passed else ATTENTION))
+    lum = telemetry.get("lum")
+    lum_min, lum_max = _limit(cfg, "iqa", "lum_min"), _limit(cfg, "iqa", "lum_max")
+    if lum is not None and lum_min is not None and lum_max is not None:
+        if lum < lum_min:
+            rows.append((strings.METRIC_LUM,
+                         strings.METRIC_BELOW.format(value=lum, limit=int(lum_min)),
+                         ATTENTION))
+        elif lum > lum_max:
+            rows.append((strings.METRIC_LUM,
+                         strings.METRIC_ABOVE.format(value=lum, limit=int(lum_max)),
+                         ATTENTION))
+        else:
+            rows.append((strings.METRIC_LUM,
+                         strings.METRIC_PASSED.format(value=lum), OK))
+    yaw, yaw_max = telemetry.get("yaw"), _limit(cfg, "pose_fine", "yaw_max_deg")
+    if yaw is not None and yaw_max is not None:
+        passed = abs(yaw) <= yaw_max
+        value = u"{}°".format(abs(yaw))
+        rows.append((strings.METRIC_POSE,
+                     strings.METRIC_PASSED.format(value=value) if passed
+                     else strings.METRIC_ABOVE.format(value=value,
+                                                      limit=int(yaw_max)),
+                     OK if passed else ATTENTION))
+    return tuple(rows)
+
+
+def camera_tags(telemetry, show_score=True, best_frame=False):
+    """The two small labels written over the preview: which frame, and how good.
+
+    Both are diagnostics, so kiosk.show_score switches them off for a clinic where the
+    screen faces the waiting room.
+    """
+    if not show_score:
+        return ()
+    left = strings.BEST_FRAME_TAG if best_frame else strings.CAMERA_TAG
+    if not best_frame and telemetry.get("fps") is not None:
+        left = u"{} · {}".format(left, strings.FPS_TAG.format(fps=telemetry["fps"]))
+    right = ""
+    if telemetry.get("quality") is not None:
+        right = strings.QUALITY_TAG.format(value=telemetry["quality"])
+    return (left, right)
+
+
+def telemetry_of(state):
+    return ((state or {}).get("payload") or {}).get("telemetry") or {}
+
+
+def device_of(state):
+    return ((state or {}).get("payload") or {}).get("device") or {}
 
 ENGINE_SILENT_S = 5.0     # no state update for this long -> the engine is gone
 
@@ -77,30 +189,49 @@ def _guidance_view(state):
     message = strings.guidance(state.get("guidance_code"))
     if state["state"] == "COLLECTING" and not state.get("guidance_code"):
         message = strings.COLLECTING_HINT
+    numbers = telemetry_of(state)
+    kept, need = numbers.get("kept"), numbers.get("need")
+    progress = (kept, need) if kept is not None and need else None
     return View(screen=GUIDANCE, title=strings.GUIDING_TITLE, message=message,
-                severity=OK, show_preview=True, session_id=state.get("session_id"))
+                severity=OK, show_preview=True, session_id=state.get("session_id"),
+                steps=steps_for(state.get("guidance_code"), numbers),
+                progress=progress, camera=camera_tags(numbers))
 
 
-def _await_nurse_view(state, patient, now, show_score=True):
+def _await_nurse_view(state, patient, now, show_score=True, cfg=None):
     payload = state.get("payload") or {}
     decision = payload.get("decision") or "review_required"
     candidate = payload.get("candidate")
     countdown = payload.get("timeout_at")
     countdown_s = None if countdown is None else max(0.0, countdown - now)
+    numbers = telemetry_of(state)
 
     if decision == "spoof_suspect":
+        chips = ()
+        if show_score and numbers.get("p_real") is not None:
+            chips = (("S4 · p_real {:.2f}".format(numbers["p_real"]), ALARM),)
         return View(screen=ALERT, title=strings.ALERT_TITLE,
                     message=strings.decision_hint(decision), severity=ALARM,
                     buttons=(Button("retry", strings.BTN_RETRY, "retry"),
-                             Button("search", strings.BTN_SEARCH, None)),
-                    countdown_s=countdown_s, session_id=state.get("session_id"))
+                             Button("search", strings.BTN_SEARCH, None, True)),
+                    countdown_s=countdown_s, session_id=state.get("session_id"),
+                    chips=chips)
 
     if decision in ("low_quality", "no_match") or candidate is None:
+        chips, metrics = (), ()
+        if decision == "low_quality":
+            metrics = quality_metrics(numbers, cfg)
+            good, need = numbers.get("good"), numbers.get("need")
+            if good is not None and need:
+                chips = ((strings.GOOD_FRAMES.format(good=good, total=need),
+                          ATTENTION),)
         return View(screen=ALERT, title=strings.decision_title(decision),
                     message=strings.decision_hint(decision), severity=ATTENTION,
                     buttons=(Button("retry", strings.BTN_RETRY, "retry", True),
                              Button("search", strings.BTN_SEARCH, None)),
-                    countdown_s=countdown_s, session_id=state.get("session_id"))
+                    countdown_s=countdown_s, session_id=state.get("session_id"),
+                    show_preview=decision == "low_quality",
+                    chips=chips, metrics=metrics)
 
     fields = candidate_fields(candidate, patient, show_score)
     fields += ((strings.LABEL_CONFIDENCE, confidence_label(decision)),)
@@ -111,6 +242,7 @@ def _await_nurse_view(state, patient, now, show_score=True):
 
         fields += ((strings.LABEL_LOOKALIKE, "{}  {:.2f}".format(
             mask_code(candidate["top2_code"]), candidate["top2_score"])),)
+    chips = ((strings.CHOSEN_FRAME, "primary"),)
     return View(screen=CANDIDATE, title=strings.CANDIDATE_TITLE,
                 message=strings.decision_hint(decision),
                 severity=OK if decision == "candidate_suggested" else ATTENTION,
@@ -120,7 +252,8 @@ def _await_nurse_view(state, patient, now, show_score=True):
                          Button("retry", strings.BTN_RETRY, "retry"),
                          Button("search", strings.BTN_SEARCH, None)),
                 fields=fields, countdown_s=countdown_s,
-                session_id=state.get("session_id"))
+                session_id=state.get("session_id"), chips=chips,
+                camera=camera_tags(numbers, show_score, best_frame=True))
 
 
 def _enroll_view(state):
@@ -197,8 +330,13 @@ def duplicate_codes(state):
             if entry.get("code")]
 
 
-def build(state, now, patient=None, last_update=None, show_score=True):
-    """kiosk_state row -> View. `state` may be None when nothing was ever published."""
+def build(state, now, patient=None, last_update=None, show_score=True, cfg=None):
+    """kiosk_state row -> View. `state` may be None when nothing was ever published.
+
+    `cfg` is the pipeline config, so a quality number can be shown against the threshold
+    it had to clear. Without it those rows are simply left out - a bare "độ nét 41" is
+    not something a nurse can act on.
+    """
     if state is None:
         return View(screen=ERROR, title=strings.ERROR_TITLE,
                     message=strings.STATUS_ENGINE_DOWN, severity=ALARM)
@@ -206,7 +344,8 @@ def build(state, now, patient=None, last_update=None, show_score=True):
     age = now - (last_update if last_update is not None else state.get("updated_at", now))
     if age > ENGINE_SILENT_S:
         return View(screen=ERROR, title=strings.ERROR_TITLE,
-                    message=strings.STATUS_ENGINE_DOWN, severity=ALARM)
+                    message=strings.STATUS_ENGINE_DOWN, severity=ALARM,
+                    chips=((strings.SILENT_FOR.format(seconds=int(age)), ALARM),))
 
     engine_state = state["state"]
     if engine_state == "CAMERA_ERROR":
@@ -215,7 +354,7 @@ def build(state, now, patient=None, last_update=None, show_score=True):
     if engine_state.startswith("ENROLL"):
         return _enroll_view(state)
     if engine_state == "AWAIT_NURSE":
-        return _await_nurse_view(state, patient, now, show_score)
+        return _await_nurse_view(state, patient, now, show_score, cfg)
     if engine_state in ("GUIDING", "COLLECTING", "DECIDED"):
         return _guidance_view(state)
     return _idle_view()

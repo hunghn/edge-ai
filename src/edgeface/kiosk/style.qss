@@ -6,6 +6,7 @@
 
 QWidget { background: @surface; color: @on_surface;
           font-family: "Roboto", "DejaVu Sans"; font-size: 23px; }
+QLabel { background: transparent; }
 
 /* ---------------------------------------------------------------- app bar */
 QWidget#appBar { background: @surface_2; }

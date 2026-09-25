@@ -17,6 +17,7 @@ class Chip(QtWidgets.QFrame):
     def __init__(self, text="", icon_name=None, tone="neutral", parent=None):
         super(Chip, self).__init__(parent)
         self.setObjectName("chip")
+        self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self._tone = None
         self._icon_name = None
         row = QtWidgets.QHBoxLayout(self)
@@ -107,6 +108,7 @@ class Banner(QtWidgets.QFrame):
         self.label = QtWidgets.QLabel("")
         self.label.setObjectName("bannerText")
         self.label.setWordWrap(True)
+        wrap_height(self.label)
         row.addWidget(self.label, 1)
 
     def render(self, text, severity):
@@ -123,6 +125,17 @@ class Banner(QtWidgets.QFrame):
         self.setVisible(bool(text))
 
 
+def initials(full_name):
+    """Two letters for a name. Vietnamese puts the family name first and the given
+    name last, so those are the two that identify somebody - Nguyễn Thị Hà is NH."""
+    parts = (full_name or "").split()
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0][0].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
 class Avatar(QtWidgets.QLabel):
     """Initials in a circle. The gallery holds no portraits, so initials are what we have."""
 
@@ -134,9 +147,8 @@ class Avatar(QtWidgets.QLabel):
         self.set_name(text)
 
     def set_name(self, full_name):
-        initials = "".join(part[0] for part in (full_name or "").split()[-2:]).upper()
-        if self.text() != initials:
-            self.setText(initials)
+        if self.text() != initials(full_name):
+            self.setText(initials(full_name))
 
 
 class IconButton(QtWidgets.QPushButton):
@@ -211,6 +223,24 @@ class MetricTile(QtWidgets.QFrame):
             self.dot.set_tone(tone)
 
 
+def clear_layout(layout):
+    """Empty a layout so that nothing it held is still on screen.
+
+    deleteLater() alone is not enough: it waits for the event loop, and until then the
+    widget keeps its old geometry and goes on painting. That is how a rebuilt action row
+    ends up with the previous screen's buttons drawn underneath the new ones.
+    """
+    while layout.count():
+        item = layout.takeAt(0)
+        widget = item.widget()
+        if widget is not None:
+            widget.hide()
+            widget.setParent(None)
+            widget.deleteLater()
+        elif item.layout() is not None:
+            clear_layout(item.layout())
+
+
 def row(*widgets, **kwargs):
     """A horizontal layout, because four lines of boilerplate per row adds up."""
     spacing = kwargs.pop("spacing", 12)
@@ -232,4 +262,30 @@ def label(text="", name="body", wrap=False):
     widget.setObjectName(name)
     if wrap:
         widget.setWordWrap(True)
+        wrap_height(widget)
     return widget
+
+
+def measured(widget, width):
+    """A wrapped label inside a box of a known width, so its height can be worked out.
+
+    A label added to a layout with an alignment flag is given the width it asks for, and
+    a wrapped label asks for the width of its text on one line. Putting it in a container
+    of a definite width is what lets heightForWidth answer honestly.
+    """
+    holder = QtWidgets.QWidget()
+    holder.setFixedWidth(width)
+    box = QtWidgets.QVBoxLayout(holder)
+    box.setContentsMargins(0, 0, 0, 0)
+    box.addWidget(widget)
+    return holder
+
+
+def wrap_height(widget):
+    """Let a layout ask a wrapped label how tall it is at the width it was given.
+
+    Without this a QLabel reports the height of a single line, and every paragraph that
+    wraps loses its last line."""
+    policy = widget.sizePolicy()
+    policy.setHeightForWidth(True)
+    widget.setSizePolicy(policy)

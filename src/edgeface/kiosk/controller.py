@@ -69,7 +69,8 @@ class KioskController(object):
                 # Hand the screen to the engine while it photographs the patient: the
                 # admin menu must not sit on top of the pose guidance, the shot counter
                 # or the Save button. The admin session stays unlocked underneath.
-                return view_model.build(self.state, now, None, self.last_update)
+                return view_model.build(self.state, now, None, self.last_update,
+                                        cfg=self.cfg)
             if not self.auth.is_unlocked(now):
                 self.local_screen = view_model.PIN
                 self.local_context = {"operator_id": None, "pin": "", "error": None}
@@ -82,7 +83,8 @@ class KioskController(object):
             return self._admin_view(now)
         patient = self._candidate_patient()
         show_score = (self.cfg.get("kiosk") or {}).get("show_score", True)
-        return view_model.build(self.state, now, patient, self.last_update, show_score)
+        return view_model.build(self.state, now, patient, self.last_update, show_score,
+                                self.cfg)
 
     def _enrolling(self):
         """True while the engine is running the enrolment flow."""

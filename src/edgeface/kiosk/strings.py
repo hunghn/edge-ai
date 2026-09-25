@@ -163,3 +163,77 @@ def decision_title(value):
 
 def decision_hint(value):
     return DECISION_HINT.get(value, DECISION_HINT["review_required"])
+
+
+# ---------------------------------------------------------------- the redesign
+# The five gates, as a patient would describe them. The stepper turns four seconds of
+# silence into something that is visibly happening.
+STEP_LABELS = (
+    "Thấy khuôn mặt",
+    "Khoảng cách và vị trí",
+    "Nhìn thẳng",
+    "Chất lượng ảnh",
+    "So khớp danh sách",
+)
+ENROLL_STEPS = ("Thông tin", "Chụp ảnh", "Xem lại và lưu")
+
+CLINIC_DEFAULT = "Phòng khám"
+IDLE_LEAD = "Mời bệnh nhân đứng vào giữa khung hình, cách màn hình khoảng một sải tay."
+IDLE_CHIP_MASK = "Không đeo khẩu trang"
+IDLE_CHIP_LOOK = "Nhìn thẳng vào camera"
+IDLE_FOOT = "Nhân viên sẽ xác nhận trước khi bạn vào phòng khám."
+IDLE_OFFLINE = "Hoạt động cả khi mất mạng"
+COLLECTING_LABEL = "Đang lấy ảnh"
+HOLD_A_MOMENT = "Giữ yên khoảng một giây rưỡi"
+
+CAMERA_TAG = "CAM 01"
+FPS_TAG = "{fps:.1f} fps"
+QUALITY_TAG = "chất lượng {value:.2f}"
+BEST_FRAME_TAG = "khung tốt nhất"
+CHOSEN_FRAME = "Ảnh đã chọn"
+SCORE_DETAIL = "Chi tiết so khớp"
+LABEL_MARGIN_SHORT = "Cách BN thứ hai"
+LABEL_LOOKALIKE_SHORT = "Người gần nhì"
+
+# Why a frame was turned away, next to the threshold it missed.
+REJECTED_BECAUSE = "Khung hình bị loại vì"
+METRIC_BLUR = "Độ nét"
+METRIC_LUM = "Độ sáng"
+METRIC_POSE = "Góc nghiêng"
+METRIC_PASSED = "{value} đạt"
+METRIC_BELOW = "{value} < {limit}"
+METRIC_ABOVE = "{value} > {limit}"
+GOOD_FRAMES = "{good}/{total} khung đạt"
+
+SPOOF_HEADLINE = "Nghi ngờ dùng ảnh in hoặc màn hình"
+SPOOF_TODO = "Việc cần làm"
+SPOOF_STEPS = (
+    "1 · Nhìn trực tiếp: người thật hay ảnh, điện thoại, máy tính bảng?",
+    "2 · Nếu là người thật, mời đứng lại và bấm Thử lại.",
+    "3 · Nếu không, không xác nhận và báo quản lý ca.",
+)
+SPOOF_NO_DETAILS = "Không hiển thị thông tin bệnh nhân ở màn hình này."
+SPOOF_EVIDENCE = "Ảnh bằng chứng đã lưu trên máy này"
+
+NO_MATCH_HEADLINE = "Chưa tìm thấy bệnh nhân phù hợp"
+NO_MATCH_LEAD = ("Khuôn mặt này không khớp với ai trong {count} bệnh nhân đã tải về máy "
+                 "hôm nay. Có thể bệnh nhân chưa đăng ký khuôn mặt, hoặc lịch hẹn chưa "
+                 "được đồng bộ.")
+BTN_ENROLL_LOCKED = "Đăng ký mới · cần PIN"
+GALLERY_TAG = "gallery v{version} · {count} BN"
+
+SEARCH_HINT_SHORT = "mã hoặc tên không dấu"
+SEARCH_COUNT = "{count} bệnh nhân hôm nay"
+BTN_CHOOSE = "Chọn"
+SEARCH_ROW_SUB = "{code} · {year}"
+
+ERROR_HEADLINE = "Chưa nhận diện được lúc này"
+ERROR_LEAD = ("Không nhận được tín hiệu từ bộ nhận dạng. Mời bệnh nhân làm thủ tục tại "
+              "quầy như bình thường.")
+ERROR_NO_DATA = "Dữ liệu bệnh nhân không hiển thị khi hệ thống đang lỗi"
+ERROR_RETRYING = "tự thử lại mỗi 5 giây"
+SUPPORT_CALL = "Gọi kỹ thuật · đọc mã {code}"
+LAST_SEEN = "lần cuối {at}"
+SILENT_FOR = "mất tín hiệu {seconds}s"
+PAGE_TITLE_GUIDING = "Đang nhận dạng"
+SESSION_TAG = "Phiên {short}"
