@@ -99,8 +99,10 @@ def change_pin(conn, operator_id, old_pin, new_pin, now=None, iterations=DEFAULT
         return False, reason
     if not validate_pin_format(new_pin, pin_length):
         return False, "bad_format"
-    conn.execute("UPDATE operators SET pin_hash = ? WHERE operator_id = ?",
-                 (hash_pin(new_pin, iterations), operator_id))
+    conn.execute("UPDATE operators SET pin_hash = ?, pin_changed_at = ? "
+                 "WHERE operator_id = ?",
+                 (hash_pin(new_pin, iterations), clock.now() if now is None else now,
+                  operator_id))
     return True, OK
 
 

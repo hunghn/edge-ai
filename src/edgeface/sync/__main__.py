@@ -21,6 +21,7 @@ from edgeface import config as cfg_mod
 from edgeface.common.log import get_logger
 from edgeface.engine.models import load_manifest
 from edgeface.storage import clock, db, outbox
+from edgeface.storage.db import get_meta, set_meta, transaction
 from edgeface.sync import puller, uploader
 from edgeface.sync.bundle import BundleError, sync_bundle
 from edgeface.sync.client import ServerClient, ServerError
@@ -88,11 +89,32 @@ class SyncService(object):
             LOG.warning("bundle sync skipped: %s", exc)
             return {"changed": False, "reason": str(exc)}
 
+    SYNC_REQUEST_KEY = "sync_requested_at"
+
+    def requested(self):
+        """True when a nurse asked for a pull from the kiosk's status screen.
+
+        Cleared as soon as it is seen, so the request means "once, now" rather than
+        "from now on".
+        """
+        value = get_meta(self.conn, self.SYNC_REQUEST_KEY)
+        try:
+            asked = float(value or 0)
+        except (TypeError, ValueError):
+            asked = 0.0
+        if asked <= 0:
+            return False
+        with transaction(self.conn):
+            set_meta(self.conn, self.SYNC_REQUEST_KEY, 0)
+        LOG.info("pulling now: asked for from the kiosk")
+        return True
+
     def cycle(self, now=None):
         """One pass: upload, then pull when due, then heartbeat and bundles."""
         now = clock.now() if now is None else now
         result = {"upload": self.upload(now)}
-        if (now - self.last_pull) >= self.sync_cfg.get("pull_interval_s", 300):
+        due = (now - self.last_pull) >= self.sync_cfg.get("pull_interval_s", 300)
+        if due or self.requested():
             try:
                 result["pull"] = self.pull(now)
                 self.last_pull = now

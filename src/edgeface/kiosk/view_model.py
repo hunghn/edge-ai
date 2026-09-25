@@ -39,15 +39,17 @@ Button.__new__.__defaults__ = (None, False)
 # chips    : ((text, tone), ...) for the app bar
 # metrics  : ((label, value, tone), ...) - why a frame was turned away
 # camera   : (left tag, right tag) written over the preview, or ()
+# step     : which of the three enrolment steps is being worked on, or None
 # Everything after session_id was added for the Material redesign and defaults to empty,
 # so a View built by an older caller, or from an engine that sends no telemetry, is
 # still a valid View and the page simply leaves those panels out.
 View = namedtuple("View", [
     "screen", "title", "message", "severity", "buttons", "fields", "show_preview",
     "countdown_s", "session_id", "steps", "progress", "chips", "metrics", "camera",
+    "step",
 ])
 View.__new__.__defaults__ = (None, None, OK, (), (), False, None, None, (), None, (),
-                             (), ())
+                             (), (), None)
 
 # Stepper states, mirrored in widgets/stepper.py.
 DONE = "done"
@@ -264,7 +266,8 @@ def _enroll_view(state):
         return View(screen=ENROLL, title=strings.ENROLL_TITLE,
                     message=strings.ENROLL_ERRORS.get(reason, strings.ENROLL_ERRORS["timeout"]),
                     severity=ATTENTION,
-                    buttons=(Button("cancel", strings.BTN_BACK, None),))
+                    buttons=(Button("cancel", strings.BTN_BACK_TO_MENU, None),),
+                    step=1)
     if engine_state == "ENROLL_REVIEW":
         warnings = payload.get("warnings") or []
         duplicates = payload.get("duplicates") or []
@@ -285,10 +288,14 @@ def _enroll_view(state):
                     severity=ATTENTION if lines else OK,
                     buttons=(Button("enroll_confirm", strings.BTN_ENROLL_SAVE,
                                     "enroll_confirm", True),
-                             Button("enroll_cancel", strings.BTN_CANCEL, "enroll_cancel")),
+                             Button("enroll_cancel", strings.BTN_ENROLL_CANCEL,
+                                    "enroll_cancel")),
                     fields=(("", strings.LABEL_PROGRESS.format(
                         done=payload.get("n_templates", 0),
-                        total=payload.get("n_templates", 0))),))
+                        total=payload.get("n_templates", 0))),),
+                    step=2, metrics=_review_metrics(payload),
+                    progress=(payload.get("n_templates", 0),
+                              payload.get("n_templates", 0)))
     done = payload.get("progress", 0)
     total = payload.get("total", 5)
     message = strings.guidance(state.get("guidance_code")) if state.get("guidance_code") \
@@ -296,7 +303,22 @@ def _enroll_view(state):
     return View(screen=ENROLL, title=strings.ENROLL_TITLE, message=message, severity=OK,
                 show_preview=True,
                 fields=(("", strings.LABEL_PROGRESS.format(done=done, total=total)),),
-                buttons=(Button("enroll_cancel", strings.BTN_CANCEL, "enroll_cancel"),))
+                buttons=(Button("enroll_cancel", strings.BTN_ENROLL_CANCEL,
+                                "enroll_cancel"),),
+                step=1, progress=(done, total),
+                camera=camera_tags(telemetry_of(state)))
+
+
+def _review_metrics(payload):
+    """What the five shots came out like, for the nurse to sign off on."""
+    rows = []
+    if payload.get("self_consistency") is not None:
+        rows.append((strings.ENROLL_CONSISTENCY,
+                     "{:.2f}".format(payload["self_consistency"]), OK))
+    if payload.get("n_templates"):
+        rows.append((strings.ENROLL_TEMPLATES,
+                     u"{} \u00d7 512-d".format(payload["n_templates"]), OK))
+    return tuple(rows)
 
 
 def _duplicate_view(payload, warnings, duplicates):
@@ -313,8 +335,10 @@ def _duplicate_view(payload, warnings, duplicates):
                if "duplicate_unknown_threshold" in warnings else strings.DUPLICATE_HINT)
     return View(screen=DUPLICATE, title=strings.DUPLICATE_TITLE, message=message,
                 severity=ATTENTION, fields=rows,
-                buttons=(Button("enroll_confirm", strings.BTN_SAVE_ANYWAY, "enroll_confirm"),
-                         Button("enroll_cancel", strings.BTN_CANCEL, "enroll_cancel", True)))
+                buttons=(Button("enroll_confirm", strings.BTN_SAVE_ANYWAY_LONG,
+                                "enroll_confirm"),
+                         Button("enroll_cancel", strings.BTN_CANCEL_AND_LOOKUP,
+                                "enroll_cancel", True)))
 
 
 def lookalike_code(state):

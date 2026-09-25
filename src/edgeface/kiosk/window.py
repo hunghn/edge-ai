@@ -19,7 +19,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from edgeface.common.log import get_logger
 from edgeface.kiosk import strings, theme, view_model as vm
 from edgeface.kiosk.widgets import components as ui
-from edgeface.kiosk.widgets import icons, keyboard, ring, rows as row_widgets, stepper
+from edgeface.kiosk.widgets import (icons, keyboard, overlay, rail, ring,
+                                    rows as row_widgets, stepper)
 from edgeface.kiosk.widgets.numpad import NumPad
 from edgeface.kiosk.widgets.preview import PreviewWidget
 
@@ -252,9 +253,14 @@ class Page(QtWidgets.QWidget):
         self.content.addLayout(self.fields)
 
         self.actions = ActionBar()
-        self.actions.button_clicked.connect(self.button_clicked.emit)
+        self.actions.button_clicked.connect(self._on_action)
         root.addWidget(self.actions)
+        self.extras = {}                      # what the window hands over before a render
         self.build()
+
+    def _on_action(self, button):
+        """Every tap on the action row passes through here, so a page can intercept one."""
+        self.button_clicked.emit(button)
 
     # Subclasses put their own widgets in self.body here.
     def build(self):
@@ -609,33 +615,347 @@ class SearchPage(Page):
         self.banner.setVisible(False)          # the placeholder already says this
 
 
-class PatientListPage(Page):
+class RailPage(Page):
+    """An admin screen: the four destinations stay on screen while one is being used.
+
+    The first version made each job end by walking back to a menu, so a nurse who wanted
+    to register a patient and then check the sync had to go up and down twice.
+    """
+
+    RAIL = (("enroll", strings.BTN_MENU_ENROLL, "person_add"),
+            ("patients", strings.BTN_MENU_PATIENTS, "group"),
+            ("status", strings.BTN_MENU_STATUS, "pulse"),
+            ("change_pin", strings.BTN_CHANGE_PIN, "key"))
+    RAIL_LABELS = {"enroll": u"Đăng ký", "patients": u"BN hôm nay",
+                   "status": u"Trạng thái", "change_pin": u"Đổi PIN"}
+    ACTIVE = None
+
+    def __init__(self, parent=None, cfg=None, screen=None, **kwargs):
+        super(RailPage, self).__init__(parent, cfg=cfg, screen=screen, **kwargs)
+        items = [(key, self.RAIL_LABELS[key], icon) for key, _label, icon in self.RAIL]
+        self.rail = rail.NavRail(items, footer=("logout", u"Thoát", "logout"))
+        self.rail.selected.connect(self._rail_tapped)
+        self.rail.render(self.ACTIVE)
+        self.middle.insertWidget(0, self.rail)
+
+    def _rail_tapped(self, key):
+        labels = dict((k, label) for k, label, _icon in self.RAIL)
+        self.button_clicked.emit(
+            vm.Button(key, labels.get(key, strings.BTN_LOGOUT), None))
+
+
+class AdminPage(RailPage):
+    """The landing screen: four cards, each already carrying its own number."""
+
+    ACTIVE = None
+    CARDS = (("enroll", strings.BTN_MENU_ENROLL, "person_add", True),
+             ("patients", strings.BTN_MENU_PATIENTS, "group", False),
+             ("status", strings.BTN_MENU_STATUS, "pulse", False),
+             ("change_pin", strings.BTN_CHANGE_PIN, "key", False))
+
+    def build(self):
+        self.cards = {}
+        self.captions = {}
+        grid = QtWidgets.QGridLayout()
+        grid.setHorizontalSpacing(20)
+        grid.setVerticalSpacing(16)
+        for index, (kind, label, icon_name, primary) in enumerate(self.CARDS):
+            holder = ui.Card()
+            button = QtWidgets.QPushButton(label)
+            button.setObjectName("tonal" if primary else "")
+            button.setIcon(icons.icon(icon_name, 30,
+                                      theme.colour("on_primary_container" if primary
+                                                   else "on_surface_var")))
+            button.setIconSize(QtCore.QSize(30, 30))
+            button.setMinimumHeight(88)
+            button.clicked.connect(
+                lambda _c=False, k=kind, t=label: self.button_clicked.emit(
+                    vm.Button(k, t, None)))
+            caption = ui.label("", "body", wrap=True)
+            holder.add(button)
+            holder.add(caption)
+            grid.addWidget(holder, index // 2, index % 2)
+            self.cards[kind] = button
+            self.captions[kind] = caption
+        self.body.addLayout(grid)
+        self.body.addStretch(1)
+
+    def render(self, view):
+        # The cards are the menu. Leaving the same four entries in the action row as
+        # well would put two buttons with one label on the screen, and a tap would land
+        # on whichever of them Qt happened to find first.
+        menu = tuple(b for b in view.buttons if b.kind in self.captions)
+        super(AdminPage, self).render(
+            view._replace(buttons=tuple(b for b in view.buttons if b not in menu)))
+
+    def render_body(self, view):
+        for kind, caption in self.captions.items():
+            text = self.extras.get(kind, "")
+            if caption.text() != text:
+                caption.setText(text)
+
+
+class PatientListPage(RailPage):
     """Today's patients, one per row, selectable so that Revoke has a target."""
 
     patient_selected = QtCore.pyqtSignal(str)
+    ACTIVE = "patients"
 
     def build(self):
         self.selected = None
         self._shown = None
         self.rows = QtWidgets.QListWidget()
-        row_widgets.apply(self.rows)
+        row_widgets.apply(self.rows, self._revoke_tapped)
         self.rows.itemClicked.connect(self._selected)
         self.rows.itemActivated.connect(self._selected)
         self.body.addWidget(self.rows, 1)
+        self.dialog = overlay.ConfirmDialog(self)
+        self.dialog.confirmed.connect(self._confirmed)
+        self._pending = None
 
     def _selected(self, item):
         self.selected = item.data(QtCore.Qt.UserRole)
         self.patient_selected.emit(self.selected)
 
+    def _revoke_tapped(self, code):
+        """The bin on a row asks about that row, whichever row is highlighted."""
+        self.selected = code
+        self.patient_selected.emit(code)
+        self._ask(code)
+
+    def _on_action(self, button):
+        if button.kind == "revoke" and self.selected:
+            self._ask(self.selected)
+            return
+        self.button_clicked.emit(button)
+
+    def _ask(self, code):
+        name = dict(self._shown or {}).get(code, code)
+        self._pending = vm.Button("revoke", strings.BTN_REVOKE, None)
+        self.dialog.ask(strings.REVOKE_TITLE.format(code=code),
+                        strings.REVOKE_BODY.format(name=name),
+                        strings.BTN_REVOKE_CONFIRM, strings.BTN_CANCEL)
+
+    def _confirmed(self):
+        if self._pending is not None:
+            self.button_clicked.emit(self._pending)
+            self._pending = None
+
+    def resizeEvent(self, event):
+        super(PatientListPage, self).resizeEvent(event)
+        self.dialog.follow()
+
     def render_fields(self, view):
         rows = tuple(view.fields)
         if rows != self._shown:
             self._shown = rows
-            row_widgets.fill(self.rows, [{"code": code, "name": name}
-                                         for code, name in rows])
+            row_widgets.fill(self.rows, [
+                dict({"code": code, "name": name}, **self.extras.get(code, {}))
+                for code, name in rows])
         if self.selected not in [code for code, _name in rows]:
             self.selected = None
             self.rows.clearSelection()
+
+
+class StatusPage(RailPage):
+    """Six numbers and the word that says whether each one is good news."""
+
+    ACTIVE = "status"
+    COLUMNS = 3
+
+    def build(self):
+        self._shown = None
+        self.grid = QtWidgets.QGridLayout()
+        self.grid.setHorizontalSpacing(16)
+        self.grid.setVerticalSpacing(14)
+        self.tiles = []
+        self.body.addLayout(self.grid)
+        self.device = ui.Card(outlined=True)
+        self.device.add(ui.SectionLabel(u"Thiết bị"))
+        self.device_line = ui.label("", "mono", wrap=True)
+        self.device.add(self.device_line)
+        self.body.addWidget(self.device)
+        self.body.addStretch(1)
+
+    def render_fields(self, view):
+        """The tiles are the status rows; the richer version comes from `extras`."""
+        tiles = self.extras.get("tiles") or tuple(
+            (label, value, "", None) for label, value in view.fields)
+        while len(self.tiles) < len(tiles):
+            tile = ui.MetricTile()
+            self.grid.addWidget(tile, len(self.tiles) // self.COLUMNS,
+                                len(self.tiles) % self.COLUMNS)
+            self.tiles.append(tile)
+        for index, tile in enumerate(self.tiles):
+            visible = index < len(tiles)
+            tile.setVisible(visible)
+            if visible:
+                label, value, foot, tone = tiles[index]
+                tile.render(label, value, foot, tone)
+
+    def render_body(self, view):
+        line = self.extras.get("device_line", "")
+        if self.device_line.text() != line:
+            self.device_line.setText(line)
+        self.device.setVisible(bool(line))
+
+
+class ChangePinPage(RailPage):
+    """Old, new, then new again, with the three steps drawn along the top."""
+
+    ACTIVE = "change_pin"
+    submitted = QtCore.pyqtSignal(str)
+    STEPS = (u"Hiện tại", u"Mới", u"Nhập lại")
+
+    def __init__(self, parent=None, pin_length=6, cfg=None, screen=None):
+        self.pin_length = pin_length
+        super(ChangePinPage, self).__init__(parent, cfg=cfg, screen=screen)
+
+    def build(self):
+        self._pin = ""
+        split = QtWidgets.QHBoxLayout()
+        split.setSpacing(40)
+        side = QtWidgets.QVBoxLayout()
+        side.setSpacing(20)
+        side.addStretch(1)
+        self.steps = stepper.HStepper(self.STEPS)
+        side.addWidget(self.steps)
+        self.prompt = ui.label("", "headline", wrap=True)
+        side.addWidget(self.prompt)
+        self.dots = QtWidgets.QLabel("")
+        self.dots.setObjectName("title")
+        side.addWidget(self.dots)
+        side.addStretch(1)
+        split.addLayout(side, 1)
+
+        pad = NumPad(accept_label=strings.BTN_OK)
+        pad.digit_pressed.connect(self._append)
+        pad.backspace_pressed.connect(self._backspace)
+        pad.accepted.connect(self._submit)
+        split.addWidget(pad)
+        self.body.addLayout(split, 1)
+
+    def _redraw(self):
+        self.dots.setText(u"●" * len(self._pin)
+                          + u"○" * (self.pin_length - len(self._pin)))
+
+    def _append(self, digit):
+        if len(self._pin) < self.pin_length:
+            self._pin += digit
+            self._redraw()
+        if len(self._pin) == self.pin_length:
+            self._submit()
+
+    def _backspace(self):
+        self._pin = self._pin[:-1]
+        self._redraw()
+
+    def _submit(self):
+        pin, self._pin = self._pin, ""
+        self._redraw()
+        self.submitted.emit(pin)
+
+    def render_body(self, view):
+        step = {strings.CHANGE_PIN_OLD: 0, strings.CHANGE_PIN_NEW: 1,
+                strings.CHANGE_PIN_REPEAT: 2}.get(view.message)
+        if step is not None:
+            self.steps.render(step)
+        wrong = view.severity != vm.OK
+        self.prompt.setText("" if wrong else (view.message or ""))
+        self.prompt.setVisible(not wrong)
+        self.banner.setVisible(wrong)
+        self._redraw()
+
+
+class EnrollPage(Page):
+    """Taking the five shots, and then signing them off.
+
+    One page for both: the nurse is watching the patient rather than the screen, and a
+    page that changes under them mid-capture is one more thing to re-read.
+    """
+
+    def build(self):
+        self.steps = stepper.HStepper(strings.ENROLL_STEPS)
+        self.body.addWidget(self.steps)
+
+        split = QtWidgets.QHBoxLayout()
+        split.setSpacing(24)
+        split.addWidget(self.camera, 14)
+
+        side = QtWidgets.QVBoxLayout()
+        side.setSpacing(16)
+        self.shots_card = ui.Card()
+        self.shot_count = ui.label("", "fieldValue")
+        self.shots_card.add_layout(ui.row(ui.SectionLabel(strings.ENROLL_SHOTS), None,
+                                          self.shot_count))
+        self.shots_row = QtWidgets.QHBoxLayout()
+        self.shots_row.setSpacing(12)
+        self.shots = []
+        for _ in range(5):
+            slot = QtWidgets.QLabel()
+            slot.setObjectName("shotEmpty")
+            slot.setFixedSize(76, 92)
+            slot.setAlignment(QtCore.Qt.AlignCenter)
+            self.shots_row.addWidget(slot)
+            self.shots.append(slot)
+        self.shots_row.addStretch(1)
+        self.shots_card.add_layout(self.shots_row)
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(10)
+        self.shots_card.add(self.progress_bar)
+        side.addWidget(self.shots_card)
+
+        self.summary = ui.Card(outlined=True)
+        self.summary_rows = QtWidgets.QVBoxLayout()
+        self.summary_rows.setSpacing(10)
+        self.summary.add_layout(self.summary_rows)
+        self._summary_shown = None
+        side.addWidget(self.summary)
+        side.addStretch(1)
+        split.addLayout(side, 11)
+        self.body.addLayout(split, 1)
+        self._filled = -1
+
+    def action_note(self, view):
+        return strings.ENROLL_NOT_STORED if view.show_preview else ""
+
+    def render_fields(self, view):
+        """The count belongs beside the slots it counts, not in a table of its own."""
+        text = dict(view.fields).get("", "")
+        if self.shot_count.text() != text:
+            self.shot_count.setText(text)
+
+    def render_body(self, view):
+        self.steps.render(view.step if view.step is not None else 1)
+        self.camera.render(view.message if view.show_preview else "", view.camera)
+        self.banner.setVisible(bool(view.message) and not view.show_preview)
+
+        taken, wanted = view.progress or (0, 5)
+        self.progress_bar.setMaximum(max(1, wanted))
+        self.progress_bar.setValue(taken)
+        if taken != self._filled:
+            self._filled = taken
+            for index, slot in enumerate(self.shots):
+                slot.setVisible(index < max(wanted, 1))
+                done = index < taken
+                name = "shotFilled" if done else "shotEmpty"
+                if slot.objectName() != name:
+                    slot.setObjectName(name)
+                    slot.style().unpolish(slot)
+                    slot.style().polish(slot)
+                slot.setPixmap(icons.pixmap("face", 40,
+                                            theme.colour("on_surface_var" if done
+                                                         else "outline_var")))
+
+        if view.metrics == self._summary_shown:
+            return
+        self._summary_shown = view.metrics
+        ui.clear_layout(self.summary_rows)
+        self.summary.setVisible(bool(view.metrics))
+        for label, value, _tone in view.metrics or ():
+            self.summary_rows.addLayout(
+                ui.row(ui.label(label, "body"), None, ui.label(str(value), "mono")))
 
 
 class DuplicatePage(Page):
@@ -646,42 +966,57 @@ class DuplicatePage(Page):
     somebody who is not here and did not agree to appear on this screen.
     """
 
-    THUMB = 96
+    THUMB = 260
 
     def build(self):
         self.faces = []                 # [jpeg or None], row order, set by the window
         self._shown = None
-        self.rows = QtWidgets.QWidget()
-        self._rows_layout = QtWidgets.QVBoxLayout(self.rows)
-        self._rows_layout.setSpacing(12)
-        self.body.addWidget(self.rows, 1)
+        columns = QtWidgets.QHBoxLayout()
+        columns.setSpacing(20)
 
-    def _row(self, masked_code, score, jpeg):
-        line = QtWidgets.QWidget()
-        box = QtWidgets.QHBoxLayout(line)
-        box.setSpacing(16)
+        # The face the nurse is comparing against is the one in front of the camera, and
+        # the engine keeps writing the preview while the review screen is up. Nothing has
+        # to be stored for this column to exist.
+        mine = ui.Card()
+        mine.add(ui.SectionLabel(strings.DUPLICATE_NEW))
+        mine.add(self.camera, 1)
+        mine.add_layout(ui.row(None, ui.Chip(strings.DUPLICATE_NEW_TAG, tone="primary"),
+                               None))
+        columns.addWidget(mine, 1)
+
+        self.rows = QtWidgets.QWidget()
+        self._rows_layout = QtWidgets.QHBoxLayout(self.rows)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._rows_layout.setSpacing(20)
+        columns.addWidget(self.rows, 2)
+        self.body.addLayout(columns, 1)
+
+    def _row(self, masked_code, score, jpeg, title):
+        """One candidate: the picture, then a masked code and a score. Never a name."""
+        card = ui.Card()
+        card.add(ui.SectionLabel(title))
 
         thumb = QtWidgets.QLabel()
         thumb.setObjectName("duplicateFace")
-        thumb.setFixedSize(self.THUMB, self.THUMB)
+        thumb.setMinimumSize(self.THUMB, self.THUMB)
         thumb.setAlignment(QtCore.Qt.AlignCenter)
         pixmap = QtGui.QPixmap()
         if jpeg and pixmap.loadFromData(jpeg, "JPG"):
-            thumb.setPixmap(pixmap.scaled(self.THUMB, self.THUMB, QtCore.Qt.KeepAspectRatio,
+            thumb.setPixmap(pixmap.scaled(self.THUMB, self.THUMB,
+                                          QtCore.Qt.KeepAspectRatio,
                                           QtCore.Qt.SmoothTransformation))
         else:
             # Patients pulled from the server arrive as embeddings only (C-24 covers the
             # kiosk side). An empty frame is honest; a missing row would not be.
             thumb.setText(strings.DUPLICATE_NO_PHOTO)
             thumb.setWordWrap(True)
-        box.addWidget(thumb)
+        card.add(thumb, 1)
+        card.add_layout(ui.row(ui.Chip(masked_code), ui.Chip(score, tone="attention"),
+                               ui.Chip(strings.DUPLICATE_MASKED_NAME), None))
+        return card
 
-        text = QtWidgets.QLabel("{}\n{}\n{}".format(masked_code,
-                                                    strings.DUPLICATE_MASKED_NAME,
-                                                    score))
-        text.setObjectName("fieldValue")
-        box.addWidget(text, 1)
-        return line
+    def render_body(self, view):
+        self.camera.render("", ())
 
     def render_fields(self, view):
         key = (tuple(view.fields), tuple(f is not None for f in self.faces))
@@ -689,11 +1024,13 @@ class DuplicatePage(Page):
             return                       # same as last redraw; see the button-rebuild note
         self._shown = key
         ui.clear_layout(self._rows_layout)
+        titles = (strings.DUPLICATE_NEAREST, strings.DUPLICATE_SECOND)
         for index, (masked_code, score) in enumerate(view.fields):
             # self.faces is a list in the same order as the rows, with None where a
             # patient has no picture, so row and face always belong together.
             jpeg = self.faces[index] if index < len(self.faces) else None
-            self._rows_layout.addWidget(self._row(masked_code, score, jpeg))
+            title = titles[index] if index < len(titles) else strings.DUPLICATE_SECOND
+            self._rows_layout.addWidget(self._row(masked_code, score, jpeg, title))
 
 
 class PinPage(Page):
@@ -849,13 +1186,15 @@ class KioskWindow(QtWidgets.QMainWindow):
             vm.ERROR: ErrorPage(cfg=cfg, screen=vm.ERROR),
             vm.SEARCH: SearchPage(cfg=cfg, screen=vm.SEARCH),
             vm.PIN: PinPage(pin_length=pin_length, cfg=cfg, screen=vm.PIN),
-            vm.ADMIN: Page(cfg=cfg, screen=vm.ADMIN),
+            vm.ADMIN: AdminPage(cfg=cfg, screen=vm.ADMIN),
             vm.PATIENTS: PatientListPage(cfg=cfg, screen=vm.PATIENTS),
-            vm.STATUS: Page(cfg=cfg, screen=vm.STATUS),
-            vm.CHANGE_PIN: PinPage(pin_length=pin_length, cfg=cfg, screen=vm.CHANGE_PIN),
-            vm.DUPLICATE: DuplicatePage(cfg=cfg, screen=vm.DUPLICATE),
-            vm.ENROLL: GuidancePage(with_preview=True, roi=roi, cfg=cfg,
-                                    screen=vm.ENROLL),
+            vm.STATUS: StatusPage(cfg=cfg, screen=vm.STATUS),
+            vm.CHANGE_PIN: ChangePinPage(pin_length=pin_length, cfg=cfg,
+                                         screen=vm.CHANGE_PIN),
+            vm.DUPLICATE: DuplicatePage(with_preview=True, roi=roi, cfg=cfg,
+                                        screen=vm.DUPLICATE),
+            vm.ENROLL: EnrollPage(with_preview=True, roi=roi, cfg=cfg,
+                                  screen=vm.ENROLL),
         }
         for page in self.pages.values():
             page.button_clicked.connect(self._on_button)
@@ -908,10 +1247,27 @@ class KioskWindow(QtWidgets.QMainWindow):
         page = self.pages.get(view.screen, self.pages[vm.IDLE])
         if view.screen == vm.ADMIN and self.stack.currentWidget() is self.enroll_form:
             return                                   # the nurse is filling in the form
+        page.extras = self._extras_for(view.screen)
         if view.screen == vm.DUPLICATE:
             page.faces = self.controller.duplicate_faces()
         page.render(view)
         self.stack.setCurrentWidget(page)
+
+    def _extras_for(self, screen):
+        """Per-screen data that is not part of the View: rows, tiles, card captions.
+
+        These are database reads rather than a reading of the engine state, which is
+        what the View is for, and they would make every screen carry fields only one
+        screen ever uses.
+        """
+        if screen == vm.PATIENTS:
+            return self.controller.patient_rows()
+        if screen == vm.STATUS:
+            return {"tiles": self.controller.status_tiles(),
+                    "device_line": self.controller.device_line()}
+        if screen == vm.ADMIN:
+            return self.controller.admin_summary()
+        return {}
 
     def _refresh_preview(self):
         page = self.stack.currentWidget()

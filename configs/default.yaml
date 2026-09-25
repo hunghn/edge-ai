@@ -138,6 +138,9 @@ kiosk:
   hide_cursor: true               # false while driving the kiosk with a mouse
   face_box: true                  # outline the detected face on the preview
   show_score: true                # cosine score + top1-top2 gap on the candidate card
+  clinic_name: Phòng khám         # the name on the waiting screen
+  device_name: KIOSK-01           # read out to the technician when something breaks
+  support_phone: null             # TBD: no number yet, so the error screen offers none
   preview_fps: 15                 # engine write rate AND kiosk read rate
   preview_width: 480
   preview_path: /dev/shm/edgeface/preview.jpg

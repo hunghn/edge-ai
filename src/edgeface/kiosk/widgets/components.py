@@ -85,7 +85,7 @@ class Card(QtWidgets.QFrame):
 
 class SectionLabel(QtWidgets.QLabel):
     def __init__(self, text="", parent=None):
-        super(SectionLabel, self).__init__(text.upper(), parent)
+        super(SectionLabel, self).__init__(text, parent)
         self.setObjectName("sectionLabel")
 
 
@@ -193,7 +193,7 @@ class MetricTile(QtWidgets.QFrame):
         box = QtWidgets.QVBoxLayout(self)
         box.setContentsMargins(20, 17, 20, 17)
         box.setSpacing(4)
-        self.label = QtWidgets.QLabel(label.upper())
+        self.label = QtWidgets.QLabel(label)
         self.label.setObjectName("tileLabel")
         box.addWidget(self.label)
         row = QtWidgets.QHBoxLayout()
@@ -212,8 +212,8 @@ class MetricTile(QtWidgets.QFrame):
         box.addWidget(self.foot)
 
     def render(self, label, value, foot="", tone=None):
-        if self.label.text() != label.upper():
-            self.label.setText(label.upper())
+        if self.label.text() != label:
+            self.label.setText(label)
         if self.value.text() != value:
             self.value.setText(value)
         if self.foot.text() != foot:

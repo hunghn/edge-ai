@@ -63,6 +63,17 @@ def count(conn, patient_code=None):
     return int(row["n"])
 
 
+def count_by_patient(conn):
+    """{patient_code: how many templates}, in one query.
+
+    The patient list shows this per row. Asking count() once per row would be a hundred
+    round trips to an SD card for a screen a nurse glances at.
+    """
+    rows = conn.execute("SELECT patient_code, COUNT(*) AS n FROM face_templates "
+                        "GROUP BY patient_code").fetchall()
+    return dict((row["patient_code"], int(row["n"])) for row in rows)
+
+
 def gallery_version(conn):
     row = conn.execute("SELECT value FROM gallery_meta WHERE key = 'version'").fetchone()
     return int(row["value"]) if row is not None else 0

@@ -149,6 +149,9 @@ STATUS_ROWS = {
     "last_sync": "Lần đồng bộ gần nhất",
     "disk_free": "Dung lượng trống",
     "engine_state": "Trạng thái engine",
+    "fps": "Tốc độ khung",
+    "ram": "RAM đang dùng",
+    "temp": "Nhiệt độ",
 }
 NEVER = "chưa có"
 
@@ -237,3 +240,62 @@ LAST_SEEN = "lần cuối {at}"
 SILENT_FOR = "mất tín hiệu {seconds}s"
 PAGE_TITLE_GUIDING = "Đang nhận dạng"
 SESSION_TAG = "Phiên {short}"
+
+
+# The supporting line under each number on the status screen. A bare "0" does not say
+# whether it is good news.
+HEARTBEAT_AGO = "nhịp tim {s} giây trước"
+FPS_TARGET = "mục tiêu 10–15 khung/giây"
+GALLERY_FOOT = "danh sách khuôn mặt trên máy"
+PATIENTS_FOOT = "bản sao 24 giờ của hôm nay"
+OUTBOX_EMPTY = "không còn gì chờ gửi"
+OUTBOX_WAITING = "cũ nhất đã chờ {s} giây"
+MINUTES_AGO = "{n} phút trước"
+DISK_FOOT = "còn trống {pct}%"
+RAM_FOOT = "trên {total} MB"
+TEMP_FOOT = "vùng nóng nhất"
+BTN_SYNC_NOW = "Đồng bộ ngay"
+SYNC_REQUESTED = "Đã yêu cầu đồng bộ."
+
+# Patient rows
+SOURCE_KIOSK = "đăng ký tại kiosk"
+SOURCE_SERVER = "tải từ server"
+TEMPLATE_COUNT = "{n} đặc trưng"
+EXPIRES_AT = "hết hạn {at}"
+PIN_CHANGED_AGO = "đổi lần cuối {n} ngày trước"
+PIN_NEVER_CHANGED = "chưa đổi lần nào"
+ADMIN_AUTOLOCK_CHIP = "Tự khoá sau {mmss}"
+ENROLL_CARD_HINT = "Điền thông tin rồi chụp 5 ảnh"
+
+# Revoking, as a question that has to be answered on its own.
+REVOKE_TITLE = "Thu hồi bệnh nhân {code}?"
+REVOKE_BODY = ("Đặc trưng khuôn mặt của {name} sẽ bị xoá khỏi máy này và ghi vào danh "
+               "sách thu hồi. Không hoàn tác được tại kiosk.")
+BTN_REVOKE_CONFIRM = "Xoá khỏi máy này"
+
+# Enrolment
+ENROLL_SHOTS = "Ảnh đã lấy"
+ENROLL_TURN_LEFT = "Mời bệnh nhân xoay nhẹ sang trái rồi sang phải."
+ENROLL_NOT_STORED = "Ảnh chỉ dùng để trích đặc trưng, không lưu vào máy"
+ENROLL_SUMMARY = "Xem lại trước khi lưu"
+ENROLL_CONSISTENCY = "Độ đồng nhất giữa các ảnh"
+ENROLL_TEMPLATES = "Đặc trưng lưu lại"
+ENROLL_EXPIRES = "Hết hạn trên máy"
+ENROLL_OPERATOR = "Người đăng ký"
+ENROLL_NO_DUPLICATE = "Không tìm thấy khuôn mặt nào gần giống trong danh sách hiện có."
+BTN_ENROLL_RETAKE = "Chụp lại"
+BTN_ENROLL_CANCEL = "Huỷ đăng ký"
+BTN_BACK_TO_MENU = "Quay lại menu"
+
+# The duplicate warning, side by side.
+DUPLICATE_NEW = "Ảnh vừa chụp"
+DUPLICATE_NEAREST = "Gần nhất trong hệ thống"
+DUPLICATE_SECOND = "Gần thứ hai"
+BTN_SAVE_ANYWAY_LONG = "Vẫn lưu hồ sơ mới"
+BTN_CANCEL_AND_LOOKUP = "Huỷ và tra mã cũ"
+PATIENTS_ACTIVE_SHORT = "{n} đang hoạt động"
+FROM_KIOSK = "{n} đăng ký tại kiosk"
+ENGINE_IS = "Engine {state}"
+OUTBOX_PENDING = "{n} sự kiện chờ gửi"
+BOARD_NAME = "Jetson Nano 4GB"
+DUPLICATE_NEW_TAG = "hồ sơ mới"

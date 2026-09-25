@@ -213,19 +213,19 @@ def test_admin_menu_opens_each_screen_by_tapping(kiosk):
     page = window.stack.currentWidget()
     assert page is window.pages[vm.PATIENTS]
     assert page.rows.count() == 1 and "BN001" in page.rows.item(0).text()
-    buttons_of(window)["Quay lại"].click()
+    buttons_of(window)["Quay lại menu"].click()
 
     # System status: the rows must carry values, not just labels.
     buttons_of(window)["Trạng thái hệ thống"].click()
     assert window.stack.currentWidget() is window.pages[vm.STATUS]
     assert "Phiên bản gallery" in rendered_text(window)
-    buttons_of(window)["Quay lại"].click()
+    buttons_of(window)["Quay lại menu"].click()
 
     # Change PIN.
     buttons_of(window)["Đổi PIN"].click()
     assert window.stack.currentWidget() is window.pages[vm.CHANGE_PIN]
     assert "Nhập mã PIN hiện tại" in rendered_text(window)
-    buttons_of(window)["Quay lại"].click()
+    buttons_of(window)["Quay lại menu"].click()
 
     assert window.stack.currentWidget() is window.pages[vm.ADMIN]
 
@@ -257,6 +257,10 @@ def test_tapping_a_patient_then_revoke_removes_them(kiosk):
     tap_row(page.rows, 0)
     window.refresh()
     buttons_of(window)["Thu hồi"].click()
+    # Deleting a patient's face data is not something one tap should do, so the page
+    # asks first and the answer is a different button.
+    assert patients.get(controller.conn, "BN001") is not None
+    buttons_of(window)["Xoá khỏi máy này"].click()
 
     assert patients.get(controller.conn, "BN001") is None
     assert "BN001" in rendered_text(window)
@@ -483,7 +487,9 @@ def test_saving_anyway_reaches_the_engine(kiosk):
     _publish_duplicates(controller, [("BN000201", 0.91)])
     window.refresh()
 
-    assert "Vẫn lưu" in buttons_of(window) and "Huỷ" in buttons_of(window)
-    buttons_of(window)["Vẫn lưu"].click()
+    # Both buttons say what they do: the safe way out is the one that is filled in,
+    # and saving a second record for the same face is the one that has to be chosen.
+    assert "Huỷ và tra mã cũ" in buttons_of(window)
+    buttons_of(window)["Vẫn lưu hồ sơ mới"].click()
     sent = kiosk_ipc.claim_commands(controller.conn, at=1001.0)
     assert [c["type"] for c in sent] == ["enroll_confirm"]

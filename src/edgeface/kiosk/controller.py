@@ -11,7 +11,7 @@ from edgeface.kiosk import view_model
 from edgeface.kiosk.auth import AdminAuth
 from edgeface.storage import (clock, faces, kiosk_ipc, operators, outbox, patients,
                               templates)
-from edgeface.storage.db import get_meta, transaction
+from edgeface.storage.db import get_meta, set_meta, transaction
 
 LOG = get_logger("kiosk")
 
@@ -152,6 +152,14 @@ class KioskController(object):
         if button.kind == "change_pin":
             self.open_change_pin()
             return True
+        if button.kind == "logout":
+            # The rail's way out means out, from wherever it is tapped. "cancel" is the
+            # back button, which inside the admin area means up to the menu.
+            self.logout()
+            return True
+        if button.kind == "sync":
+            self.request_sync(now)
+            return True
         if button.kind == "revoke":
             code = (self.local_context or {}).get("selected")
             if code:
@@ -274,6 +282,22 @@ class KioskController(object):
         context.pop("notice", None)
         self.local_context = context
 
+    def request_sync(self, now=None):
+        """Ask the sync process for a pull. It clears the flag once it has seen it.
+
+        Not a command to the engine: the engine has nothing to do with the server, and
+        sync already reads this database on every cycle.
+        """
+        from edgeface.kiosk import strings
+
+        now = clock.now() if now is None else now
+        with transaction(self.conn):
+            set_meta(self.conn, "sync_requested_at", now)
+        self.local_context = dict(self.local_context or {},
+                                  notice=strings.SYNC_REQUESTED)
+        LOG.info("nurse asked for a sync")
+        return True
+
     def revoke_patient(self, code, reason="nurse", now=None):
         """Revoke locally, the way sync/puller.py does it.
 
@@ -314,6 +338,64 @@ class KioskController(object):
         now = clock.now() if now is None else now
         return patients.list_active(self.conn, now)
 
+    def admin_summary(self, now=None):
+        """The number under each admin card, so a nurse often need not open it."""
+        from edgeface.kiosk import strings
+
+        now = clock.now() if now is None else now
+        rows = self.today_patients(now)
+        from_kiosk = len([r for r in rows if r["source"] == patients.SOURCE_KIOSK])
+        pending = outbox.pending_count(self.conn)
+        engine_state = (self.state or {}).get("state", "?")
+        if now - (self.last_update or now) > view_model.ENGINE_SILENT_S:
+            engine_state = "?"
+        return {
+            "enroll": strings.ENROLL_CARD_HINT,
+            "patients": u"{} · {}".format(
+                strings.PATIENTS_ACTIVE_SHORT.format(n=len(rows)),
+                strings.FROM_KIOSK.format(n=from_kiosk)),
+            "status": u"{} · {}".format(
+                strings.ENGINE_IS.format(state=engine_state),
+                strings.OUTBOX_PENDING.format(n=pending)),
+            "change_pin": self._pin_age(now),
+        }
+
+    def _pin_age(self, now):
+        from edgeface.kiosk import strings
+
+        if self.auth.operator_id is None:
+            return strings.PIN_NEVER_CHANGED
+        row = operators.get(self.conn, self.auth.operator_id)
+        changed = row["pin_changed_at"] if row is not None else None
+        if not changed:
+            return strings.PIN_NEVER_CHANGED
+        return strings.PIN_CHANGED_AGO.format(n=int((now - float(changed)) / 86400))
+
+    def patient_rows(self, now=None):
+        """What the patient list draws per row, beyond the code and the name.
+
+        Where the record came from and when it expires are the two things a nurse asks
+        about a row, and neither is in the (code, name) pairs the View carries.
+        """
+        from edgeface.kiosk import strings
+
+        now = clock.now() if now is None else now
+        counts = templates.count_by_patient(self.conn)
+        rows = {}
+        for patient in self.today_patients(now):
+            code = patient["patient_code"]
+            source = (strings.SOURCE_KIOSK if patient["source"] == patients.SOURCE_KIOSK
+                      else strings.SOURCE_SERVER)
+            rows[code] = {
+                "sub": u"{} · {} · {}".format(
+                    code, source,
+                    strings.TEMPLATE_COUNT.format(n=counts.get(code, 0))),
+                "trailing": strings.EXPIRES_AT.format(
+                    at=clock.format_ts(patient["expires_at"])[11:16]),
+                "trash": True,
+            }
+        return rows
+
     # ------------------------------------------------------------------ views
     def _pin_view(self):
         from edgeface.kiosk import strings
@@ -352,7 +434,7 @@ class KioskController(object):
             rows = tuple((row["patient_code"], row["full_name"])
                          for row in self.today_patients(now))
             selected = context.get("selected")
-            buttons = [view_model.Button("cancel", strings.BTN_BACK, None)]
+            buttons = [view_model.Button("cancel", strings.BTN_BACK_TO_MENU, None)]
             if selected:
                 buttons.insert(0, view_model.Button("revoke", strings.BTN_REVOKE, None))
             if context.get("notice"):
@@ -372,7 +454,12 @@ class KioskController(object):
             return view_model.View(screen=view_model.STATUS, title=strings.STATUS_TITLE,
                                    message="", severity=view_model.OK,
                                    fields=self.status_rows(now),
-                                   buttons=(view_model.Button("cancel", strings.BTN_BACK, None),))
+                                   buttons=(view_model.Button("cancel",
+                                                              strings.BTN_BACK_TO_MENU,
+                                                              None),
+                                            view_model.Button("sync",
+                                                              strings.BTN_SYNC_NOW,
+                                                              None),))
 
         # The admin landing screen: the menu. Without these four buttons the screen is a
         # dead end, which is exactly the bug this replaced.
@@ -400,29 +487,84 @@ class KioskController(object):
             screen=view_model.CHANGE_PIN, title=strings.CHANGE_PIN_TITLE,
             message=error or prompts.get(context.get("step", "old"), strings.CHANGE_PIN_OLD),
             severity=view_model.ATTENTION if error else view_model.OK,
-            buttons=(view_model.Button("cancel", strings.BTN_BACK, None),))
+            buttons=(view_model.Button("cancel", strings.BTN_BACK_TO_MENU, None),))
 
-    def status_rows(self, now=None):
-        """Rows for the system status tab, read straight from the shared database."""
+    def status_tiles(self, now=None):
+        """(label, value, supporting line, tone) for the status screen.
+
+        A number on its own does not say whether it is good news: "0" is an empty outbox
+        and "4.2 GB" is plenty of room, and a nurse should not have to know which way is
+        up. The tone is what makes the screen readable at a glance.
+        """
         from edgeface.kiosk import strings
 
         now = clock.now() if now is None else now
         last_sync = get_meta(self.conn, "last_pull_at")
         engine_state = (self.state or {}).get("state", "?")
         age = now - (self.last_update or now)
-        if age > view_model.ENGINE_SILENT_S:
+        silent = age > view_model.ENGINE_SILENT_S
+        if silent:
             engine_state = "?"
+        free_mb, free_pct = float("nan"), None
         try:
             stat = os.statvfs(os.path.dirname(self.cfg["storage"]["db_path"]) or ".")
             free_mb = stat.f_bavail * stat.f_frsize / (1024.0 * 1024.0)
-        except (OSError, KeyError):
-            free_mb = float("nan")
-        return (
-            (strings.STATUS_ROWS["engine_state"], engine_state),
-            (strings.STATUS_ROWS["gallery"], str(templates.gallery_version(self.conn))),
-            (strings.STATUS_ROWS["patients"], str(patients.count_active(self.conn, now))),
-            (strings.STATUS_ROWS["outbox"], str(outbox.pending_count(self.conn))),
+            if stat.f_blocks:
+                free_pct = int(round(100.0 * stat.f_bavail / stat.f_blocks))
+        except (OSError, KeyError, ZeroDivisionError):
+            pass
+        pending = outbox.pending_count(self.conn)
+        device = view_model.device_of(self.state)
+        numbers = view_model.telemetry_of(self.state)
+
+        tiles = [
+            (strings.STATUS_ROWS["engine_state"], engine_state,
+             strings.NEVER if silent else strings.HEARTBEAT_AGO.format(s=round(age, 1)),
+             view_model.ALARM if silent else view_model.OK),
+            (strings.STATUS_ROWS["fps"],
+             "{:.1f}".format(numbers["fps"]) if numbers.get("fps") is not None
+             else strings.NEVER, strings.FPS_TARGET, None),
+            (strings.STATUS_ROWS["gallery"], "v" + str(templates.gallery_version(self.conn)),
+             strings.GALLERY_FOOT, None),
+            (strings.STATUS_ROWS["patients"],
+             str(patients.count_active(self.conn, now)), strings.PATIENTS_FOOT, None),
+            (strings.STATUS_ROWS["outbox"], str(pending),
+             strings.OUTBOX_EMPTY if not pending else strings.OUTBOX_WAITING.format(
+                 s=int(outbox.oldest_pending_age(self.conn, now))),
+             view_model.OK if not pending else view_model.ATTENTION),
             (strings.STATUS_ROWS["last_sync"],
-             strings.NEVER if not last_sync else clock.format_ts(float(last_sync))),
-            (strings.STATUS_ROWS["disk_free"], "{:.0f} MB".format(free_mb)),
-        )
+             strings.NEVER if not last_sync else clock.format_ts(float(last_sync))[11:16],
+             "" if not last_sync else strings.MINUTES_AGO.format(
+                 n=int((now - float(last_sync)) / 60)), None),
+            (strings.STATUS_ROWS["disk_free"], "{:.1f} GB".format(free_mb / 1024.0),
+             "" if free_pct is None else strings.DISK_FOOT.format(pct=free_pct),
+             None if free_pct is None or free_pct > 10 else view_model.ATTENTION),
+        ]
+        if device.get("ram_mb"):
+            total = device.get("ram_total_mb") or 0
+            tiles.append((strings.STATUS_ROWS["ram"], str(device["ram_mb"]),
+                          strings.RAM_FOOT.format(total=total) if total else "", None))
+        if device.get("temp_c"):
+            tiles.append((strings.STATUS_ROWS["temp"],
+                          u"{}°C".format(device["temp_c"]),
+                          strings.TEMP_FOOT, None))
+        return tuple(tiles)
+
+    def device_line(self):
+        """One line naming the board, for the bottom of the status screen."""
+        from edgeface.kiosk import strings
+
+        device = view_model.device_of(self.state)
+        parts = [strings.BOARD_NAME]
+        if device.get("ram_mb") and device.get("ram_total_mb"):
+            parts.append(u"RAM {} / {} MB".format(device["ram_mb"],
+                                                  device["ram_total_mb"]))
+        if device.get("cpu_pct") is not None:
+            parts.append(u"CPU {}%".format(device["cpu_pct"]))
+        parts.append(str((self.cfg.get("kiosk") or {}).get("device_name", "KIOSK")))
+        return u"  ·  ".join(parts)
+
+    def status_rows(self, now=None):
+        """The status tab as plain (label, value) pairs, for the generic field table."""
+        return tuple((label, value) for label, value, _foot, _tone
+                     in self.status_tiles(now))

@@ -25,7 +25,8 @@ QLabel#message { font-size: 28px; color: @on_surface_var; }
 QLabel#body { font-size: 23px; color: @on_surface_var; }
 QLabel#fieldLabel { font-size: 19px; color: @on_surface_var; }
 QLabel#fieldValue { font-size: 26px; font-weight: 500; }
-QLabel#sectionLabel { font-size: 17px; font-weight: 500; color: @on_surface_var; }
+QLabel#sectionLabel { font-size: 18px; font-weight: 500; color: @on_surface_var;
+                      letter-spacing: 0.4px; }
 QLabel#countdown { font-size: 19px; color: @on_surface_var; }
 QLabel#mono { font-family: "DejaVu Sans Mono", monospace; font-size: 21px;
               color: @on_surface_var; }
@@ -126,7 +127,8 @@ QListWidget::item:selected { background: @primary_container; color: @on_surface;
 /* ---------------------------------------------------------------- panels */
 QWidget#rail { background: @surface_2; }
 QFrame#tile { background: @surface_1; border-radius: 22px; }
-QLabel#tileLabel { font-size: 17px; font-weight: 500; color: @on_surface_var; }
+QLabel#tileLabel { font-size: 18px; font-weight: 500; color: @on_surface_var;
+                   letter-spacing: 0.4px; }
 QLabel#tileValue { font-family: "DejaVu Sans Mono", monospace; font-size: 34px;
                    font-weight: 500; color: @on_surface; }
 QLabel#tileFoot { font-size: 18px; color: @on_surface_var; }
@@ -166,3 +168,10 @@ QLabel#banner[severity="attention"] { background: @warn_container;
                                       color: @on_warn_container; }
 QLabel#banner[severity="alarm"] { background: @error_container;
                                   color: @on_error_container; }
+
+/* ---------------------------------------------------------------- enrolment shots */
+QLabel#shotFilled { background: @surface_3; border-radius: 16px; }
+QLabel#shotEmpty { background: transparent; border: 2px dashed @outline_var;
+                   border-radius: 16px; }
+QProgressBar { background: @surface_3; border: 0; border-radius: 5px; }
+QProgressBar::chunk { background: @primary; border-radius: 5px; }
