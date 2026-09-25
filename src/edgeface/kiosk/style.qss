@@ -117,6 +117,7 @@ QPushButton#iconOnly:pressed { background: @surface_3; }
 QLineEdit { font-size: 26px; padding: 14px 18px; border-radius: 14px;
             background: @surface; border: 1px solid @outline; color: @on_surface; }
 QLineEdit:focus { border: 2px solid @primary; }
+QLineEdit#invalid { border: 2px solid @error; }
 QLineEdit#searchBox { font-size: 27px; background: @surface_2; border: 0;
                       border-radius: 36px; padding: 16px 26px; }
 

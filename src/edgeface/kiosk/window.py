@@ -1157,7 +1157,35 @@ class EnrollFormPage(Page):
             widget.clear()
 
     def _submit(self):
-        self.submitted.emit(self.values())
+        """Check the form here rather than letting the engine bounce it back.
+
+        A missing code used to travel to the engine, come back as ENROLL_ERROR and be
+        reported on the next screen, by which time the nurse has already turned to the
+        patient and the form they have to fix is behind them.
+        """
+        values = self.values()
+        bad = [key for key, _label, required in self.FIELDS
+               if required and not values.get(key)]
+        year = values.get("birth_year")
+        if year is not None and not isinstance(year, int):
+            bad.append("birth_year")
+        self._mark(bad)
+        if bad:
+            self.banner.render(strings.ENROLL_ERRORS[self.REASONS[bad[0]]], vm.ATTENTION)
+            self.inputs[bad[0]].setFocus()
+            return
+        self.submitted.emit(values)
+
+    REASONS = {"patient_code": "missing_patient_code", "full_name": "missing_full_name",
+               "birth_year": "bad_birth_year"}
+
+    def _mark(self, bad):
+        for key, line in self.inputs.items():
+            name = "invalid" if key in bad else ""
+            if line.objectName() != name:
+                line.setObjectName(name)
+                line.style().unpolish(line)
+                line.style().polish(line)
 
     def render(self, view):
         # The action row is built once, in build(), so the generic render must not take

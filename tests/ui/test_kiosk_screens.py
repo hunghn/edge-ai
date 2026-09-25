@@ -624,3 +624,24 @@ def test_the_new_pages_are_not_rebuilt_on_every_redraw(kiosk):
     for _ in range(5):
         window.refresh()
     assert list(status.tiles) == tiles
+
+
+def test_the_form_says_what_is_missing_before_the_engine_has_to(kiosk):
+    """A bounced form comes back on the next screen, by which time the nurse has
+    already turned to the patient and the fields they must fix are behind them."""
+    window, controller = kiosk
+    enter_admin(window, controller)
+    buttons_of(window)["Đăng ký bệnh nhân mới"].click()
+    form = window.enroll_form
+
+    form.inputs["patient_code"].setText("BN013")      # no name
+    buttons_of(window)["Bắt đầu chụp"].click()
+    assert kiosk_ipc.claim_commands(controller.conn, at=1001.0) == []
+    assert "họ tên" in rendered_text(window)
+    assert form.inputs["full_name"].objectName() == "invalid"
+
+    form.inputs["full_name"].setText("Phạm Quốc Anh")
+    buttons_of(window)["Bắt đầu chụp"].click()
+    sent = kiosk_ipc.claim_commands(controller.conn, at=1002.0)
+    assert [c["type"] for c in sent] == ["start_enroll"]
+    assert form.inputs["full_name"].objectName() == ""
