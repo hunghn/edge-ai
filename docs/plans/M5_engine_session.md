@@ -46,6 +46,36 @@
 3. S8 `READY` → S9 → S10 → DECIDED:
    - Lưu evidence nếu `spoof_suspect` (frame có `p_real` thấp nhất, theo D-14).
    - `publish_state(AWAIT_NURSE, payload={decision, rule_id, candidate{code, full_name, birth_year, appointment}, confidence_label})`.
+
+### Hợp đồng `kiosk_state.payload` (bổ sung 2026-09-25)
+
+Ngoài các khoá nghiệp vụ ở trên, engine gửi kèm hai khối số liệu cho giao diện Material 3
+(M6). Kiosk coi cả hai là **tuỳ chọn**: thiếu khối nào thì phần giao diện tương ứng tự ẩn,
+nên kiosk mới vẫn chạy với engine cũ.
+
+```
+payload["telemetry"] = {        # số của khung hiện tại, đã lượng tử hoá
+  "stage":   "S1".."S8" | null, # chặng dừng, để kiosk tô stepper 5 cửa
+  "kept":    int,   # số khung collector đang giữ      "need": int (best_frame.k_max)
+  "quality": float, # 2 chữ số                          "p_real": float, 2 chữ số
+  "blur":    int, "lum": int,                           # S5 IQA
+  "yaw": int, "pitch": int, "roll": int,                # độ, S5 (lùi về S3 khi chưa tới S5)
+  "det_score": float,                                   # 2 chữ số
+  "fps":     float  # 1 chữ số, do engine đo
+}
+payload["device"] = {"ram_mb": int, "ram_total_mb": int, "temp_c": int, "cpu_pct": int}
+```
+
+- Ở `AWAIT_NURSE`, `telemetry.p_real` là **giá trị thấp nhất của cả phiên**, không phải của
+  khung cuối: một khung thuyết phục ở cuối không xoá được lý do phiên này bật cảnh báo.
+- Kiosk **không** nhận ngưỡng qua payload; nó đọc cùng file config nên tự so sánh được để
+  hiển thị "41 < 60".
+- Khung mặt vẫn **không** đi qua payload — vẫn vẽ vào ảnh preview (`publisher._draw_box`).
+- `publisher` **bỏ hai khối này ra khỏi phép so sánh chống ghi trùng**. Chúng đổi mỗi khung,
+  nếu tính vào thì dòng `kiosk_state` sẽ bị ghi 15 lần/giây thay vì chỉ khi có thay đổi;
+  số mới đi kèm lần ghi tiếp theo, mà nhịp tim bảo đảm trong vòng 0.5 giây.
+- Tắt bằng `engine.telemetry: false` / `engine.device_metrics: false`.
+
 4. Lệnh điều dưỡng:
 
 | Lệnh | Payload | Xử lý |

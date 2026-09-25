@@ -7,6 +7,19 @@
 > Phát hiện: engine không ghi gì trong lúc chờ điều dưỡng nên kiosk tưởng engine chết sau 5 giây → đã thêm nhịp tim 0.5 s và mốc `timeout_at`.
 > Khác plan: gộp `widgets/countdown` vào `Page`; bàn phím tiếng Việt hoãn tới khi chốt D-25.
 
+> **Vẽ lại theo Material 3 (2026-09-25).** Giao diện ở §4 giữ nguyên số màn hình và luồng
+> trạng thái, nhưng bố cục dựng lại theo wireframe đã duyệt
+> (https://claude.ai/artifact/BTy8KG6LdVK4FkJDsCL29U). Khác so với kế hoạch gốc:
+> - Màn hình có camera chia **hai cột**; chỉ dẫn nằm trên ảnh chứ không ở đầu màn.
+> - UI-02 thêm **stepper 5 cửa** và bộ đếm khung `k/N` — cần dữ liệu mới từ engine
+>   (`payload.telemetry`, xem M5 §hợp đồng).
+> - UI-07 dùng **navigation rail** thay danh sách nút; UI-09 thêm **dialog** xác nhận thu hồi.
+> - UI-10 chuyển sang các **ô số** và nhận thêm fps/RAM/nhiệt độ (`payload.device`).
+> - **M6-T08 đã làm một phần**: bàn phím ảo không dấu cho UI-05 và UI-08; Telex vẫn chờ D-25.
+> - Thêm hai màn hình so với bảng §4: `no_match` tách khỏi UI-04, và dialog thu hồi của UI-09.
+> - Nhãn nút đổi cho rõ nghĩa: `Quay lại` → `Quay lại menu` trong khu quản trị,
+>   `Vẫn lưu` → `Vẫn lưu hồ sơ mới`, `Huỷ` → `Huỷ và tra mã cũ` ở màn trùng khuôn mặt.
+
 ## 1. Mục tiêu và đầu ra
 - Tiến trình `kiosk` riêng: `python3 -m edgeface.kiosk --config configs/<env>.yaml`, full-screen, tiếng Việt, RAM ≤ ~250 MB.
 - Phục vụ hai nhóm người dùng trên **cùng màn hình** (C-03):
@@ -82,8 +95,8 @@ scripts/fake_engine.py   # phát kịch bản trạng thái vào DB: identify-ok
 - **D-21:** timeout `AWAIT_NURSE`, thời gian tự khoá quản trị.
 - **D-23:** PIN.
 - **D-25:** kích thước/độ phân giải màn hình.
-- **Nhãn tin cậy hiển thị:** "khớp cao" / "cần kiểm tra". Có hiện điểm số thô cho điều dưỡng không? Đề xuất **không**.
-- **Cử chỉ mở quản trị:** nhấn giữ góc 3 s, hay nút có biểu tượng.
+- **Nhãn tin cậy hiển thị:** "khớp cao" / "cần kiểm tra". ✅ Đã chốt: nhãn đứng trước, điểm thô nằm trong thẻ phụ và tắt được bằng `kiosk.show_score`.
+- **Cử chỉ mở quản trị:** ✅ giữ góc dưới trái 3 s (F2 khi có bàn phím).
 - **Tên hiển thị trên thẻ:** hiện đầy đủ hay che một phần (ví dụ "Nguyễn T. H."). Màn hình có thể bị bệnh nhân khác nhìn thấy.
 
 ## 8. Kiểm thử
