@@ -1,30 +1,167 @@
-/* Kiosk styling: large type, high contrast, touch-sized targets. */
-QWidget { background: #10141b; color: #f2f5fa; font-family: "DejaVu Sans"; }
-QLabel#title { font-size: 40px; font-weight: 600; }
-QLabel#message { font-size: 30px; color: #d7deea; }
-QLabel#fieldLabel { font-size: 22px; color: #8e9bb3; }
-QLabel#fieldValue { font-size: 30px; font-weight: 600; }
-QLabel#countdown { font-size: 22px; color: #8e9bb3; }
-QLabel#preview { background: #05070a; border: 2px solid #253044; border-radius: 12px; }
-QLabel#banner { font-size: 26px; font-weight: 600; padding: 14px; border-radius: 10px; }
-QLabel#banner[severity="ok"] { background: #12351f; color: #7ee0a2; }
-QLabel#banner[severity="attention"] { background: #3a2f10; color: #f0c674; }
-QLabel#banner[severity="alarm"] { background: #3d1417; color: #ff8b8b; }
-QPushButton { font-size: 26px; min-height: 72px; padding: 0 28px; border-radius: 10px;
-              background: #1d2735; color: #f2f5fa; border: 1px solid #2c3a4f; }
-QPushButton:pressed { background: #26344a; }
-QPushButton#primary { background: #1f6f43; border-color: #2f8f5b; font-weight: 600; }
-QPushButton#primary:pressed { background: #298852; }
-QPushButton#danger { background: #6b2126; border-color: #8c2b31; }
-QPushButton#keypad { font-size: 30px; min-width: 96px; min-height: 84px; }
-QLineEdit { font-size: 28px; padding: 12px; border-radius: 8px; background: #172030;
-            border: 1px solid #2c3a4f; color: #f2f5fa; }
-QListWidget { font-size: 24px; background: #172030; border: 1px solid #2c3a4f;
-              border-radius: 8px; }
-QListWidget::item { padding: 14px; }
-QListWidget::item:selected { background: #24405f; }
+/* Kiosk styling: Material 3 light surface, large type, touch-sized targets.
+ *
+ * Colours are placeholders substituted from kiosk/theme.py at load time - never write a
+ * hex value here, or the widgets that paint themselves drift away from the stylesheet.
+ */
 
-/* Duplicate warning: the face is the evidence, so give it a frame of its own and keep
-   it visible even when there is no picture to put in it. */
-QLabel#duplicateFace { background: #172030; border: 1px solid #3a4d68; border-radius: 6px;
-                       font-size: 14px; color: #8d9cb3; }
+QWidget { background: @surface; color: @on_surface;
+          font-family: "Roboto", "DejaVu Sans"; font-size: 23px; }
+
+/* ---------------------------------------------------------------- app bar */
+QWidget#appBar { background: @surface_2; }
+QWidget#appBarAlarm { background: @error_container; }
+QWidget#appBarWarn { background: @warn_container; }
+QLabel#appBarTitle { font-size: 26px; font-weight: 500; }
+QLabel#appBarSub { font-size: 20px; color: @on_surface_var; }
+QWidget#appBarAlarm QLabel#appBarTitle { color: @on_error_container; }
+QWidget#appBarWarn QLabel#appBarTitle { color: @on_warn_container; }
+
+/* ---------------------------------------------------------------- type */
+QLabel#title { font-size: 40px; font-weight: 600; }
+QLabel#display { font-size: 54px; font-weight: 600; }
+QLabel#headline { font-size: 30px; font-weight: 500; }
+QLabel#message { font-size: 28px; color: @on_surface_var; }
+QLabel#body { font-size: 23px; color: @on_surface_var; }
+QLabel#fieldLabel { font-size: 19px; color: @on_surface_var; }
+QLabel#fieldValue { font-size: 26px; font-weight: 500; }
+QLabel#sectionLabel { font-size: 17px; font-weight: 500; color: @on_surface_var; }
+QLabel#countdown { font-size: 19px; color: @on_surface_var; }
+QLabel#mono { font-family: "DejaVu Sans Mono", monospace; font-size: 21px;
+              color: @on_surface_var; }
+
+/* ---------------------------------------------------------------- surfaces */
+QFrame#card { background: @surface_1; border-radius: 26px; }
+QFrame#cardOutlined { background: transparent; border: 1px solid @outline_var;
+                      border-radius: 26px; }
+QLabel#preview { background: @camera; border-radius: 26px; }
+QWidget#cameraPanel { background: @camera; border-radius: 26px; }
+QLabel#cue { background: rgba(8, 16, 15, 215); color: #EAF4F3; font-size: 28px;
+             font-weight: 500; border-radius: 30px; padding: 14px 26px; }
+QLabel#camTag { background: rgba(8, 16, 15, 180); color: #8FA5A2; border-radius: 10px;
+                font-family: "DejaVu Sans Mono", monospace; font-size: 17px;
+                padding: 6px 12px; }
+QLabel#avatar { background: @surface_3; color: @on_surface_var; font-size: 20px;
+                font-weight: 500; border-radius: 28px; }
+QLabel#avatarPrimary { background: @primary; color: @on_primary; font-size: 20px;
+                       font-weight: 500; border-radius: 28px; }
+
+/* Severity banner. The dynamic property is set by the page, so the same widget can go
+   from green to red without being rebuilt. Qt has no `inherit`, so the child label that
+   carries the words repeats the colour of every tone. */
+QFrame#banner { border-radius: 22px; background: @surface_2; }
+QLabel#bannerText { font-size: 25px; background: transparent; color: @on_surface; }
+QFrame#banner[severity="ok"] { background: @ok_container; }
+QFrame#banner[severity="ok"] QLabel { color: @on_ok_container; }
+QFrame#banner[severity="attention"] { background: @warn_container; }
+QFrame#banner[severity="attention"] QLabel { color: @on_warn_container; }
+QFrame#banner[severity="alarm"] { background: @error_container; }
+QFrame#banner[severity="alarm"] QLabel { color: @on_error_container; }
+
+QFrame#chip { border-radius: 11px; border: 1px solid @outline_var;
+              background: transparent; }
+QLabel#chipText { font-size: 19px; background: transparent; color: @on_surface_var; }
+QFrame#chip QLabel { background: transparent; }
+QFrame#chip[tone="ok"] { background: @ok_container; border-color: @ok_container; }
+QFrame#chip[tone="ok"] QLabel { color: @on_ok_container; }
+QFrame#chip[tone="attention"] { background: @warn_container;
+                                border-color: @warn_container; }
+QFrame#chip[tone="attention"] QLabel { color: @on_warn_container; }
+QFrame#chip[tone="alarm"] { background: @error_container;
+                            border-color: @error_container; }
+QFrame#chip[tone="alarm"] QLabel { color: @on_error_container; }
+QFrame#chip[tone="primary"] { background: @primary_container;
+                              border-color: @primary_container; }
+QFrame#chip[tone="primary"] QLabel { color: @on_primary_container; }
+
+/* ---------------------------------------------------------------- buttons */
+QPushButton { font-size: 23px; font-weight: 500; min-height: 64px; padding: 0 30px;
+              border-radius: 32px; background: transparent; color: @on_surface;
+              border: 1px solid @outline; }
+QPushButton:pressed { background: @surface_3; }
+QPushButton:disabled { color: @outline_var; border-color: @outline_var; }
+QPushButton#primary { background: @primary; color: @on_primary; border-color: @primary;
+                      min-height: 84px; font-size: 26px; border-radius: 42px; }
+QPushButton#primary:pressed { background: @on_primary_container; }
+QPushButton#tonal { background: @primary_container; color: @on_primary_container;
+                    border-color: @primary_container; }
+QPushButton#danger { background: transparent; color: @error; border-color: @error; }
+QPushButton#danger:pressed { background: @error_container; }
+QPushButton#dangerFilled { background: @error; color: @on_primary;
+                           border-color: @error; }
+QPushButton#text { background: transparent; color: @primary; border-color: transparent;
+                   padding: 0 20px; }
+QPushButton#text:pressed { background: @surface_2; }
+QPushButton#keypad { font-size: 30px; min-width: 96px; min-height: 78px;
+                     background: @surface_2; border-color: @surface_2;
+                     border-radius: 22px; }
+QPushButton#keypad:pressed { background: @surface_3; }
+QPushButton#kbKey { font-size: 20px; min-width: 0; min-height: 46px; padding: 0 6px;
+                    background: @surface; border-color: @outline_var;
+                    border-radius: 11px; }
+QPushButton#kbKey:pressed { background: @surface_3; }
+QToolButton#railItem { background: transparent; border: 0; font-size: 17px;
+                       min-height: 74px; padding: 6px 4px; border-radius: 18px;
+                       color: @on_surface_var; }
+QToolButton#railItem:pressed { background: @surface_3; }
+QToolButton#railItemActive { background: @primary_container;
+                             color: @on_primary_container; border: 0; font-size: 17px;
+                             font-weight: 600; min-height: 74px; padding: 6px 4px;
+                             border-radius: 18px; }
+QPushButton#iconOnly { min-height: 56px; min-width: 56px; padding: 0;
+                       border-color: transparent; border-radius: 28px; }
+QPushButton#iconOnly:pressed { background: @surface_3; }
+
+/* ---------------------------------------------------------------- inputs */
+QLineEdit { font-size: 26px; padding: 14px 18px; border-radius: 14px;
+            background: @surface; border: 1px solid @outline; color: @on_surface; }
+QLineEdit:focus { border: 2px solid @primary; }
+QLineEdit#searchBox { font-size: 27px; background: @surface_2; border: 0;
+                      border-radius: 36px; padding: 16px 26px; }
+
+QListWidget { font-size: 23px; background: transparent; border: 0; outline: 0; }
+QListWidget::item { border-radius: 20px; }
+QListWidget::item:selected { background: @primary_container; color: @on_surface; }
+
+/* ---------------------------------------------------------------- panels */
+QWidget#rail { background: @surface_2; }
+QFrame#tile { background: @surface_1; border-radius: 22px; }
+QLabel#tileLabel { font-size: 17px; font-weight: 500; color: @on_surface_var; }
+QLabel#tileValue { font-family: "DejaVu Sans Mono", monospace; font-size: 34px;
+                   font-weight: 500; color: @on_surface; }
+QLabel#tileFoot { font-size: 18px; color: @on_surface_var; }
+
+QWidget#scrim { background: @scrim; }
+QFrame#dialog { background: @surface; border-radius: 34px; }
+
+/* The face on the duplicate warning: keep the frame even when there is no picture. */
+QLabel#duplicateFace { background: @camera; border-radius: 20px; font-size: 18px;
+                       color: @outline_var; }
+QScrollBar:vertical { background: transparent; width: 10px; }
+QScrollBar::handle:vertical { background: @outline_var; border-radius: 5px;
+                              min-height: 40px; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+
+/* ---------------------------------------------------------------- steppers */
+QLabel#stepTodo { font-size: 21px; color: @outline; }
+QLabel#stepNow { font-size: 21px; font-weight: 600; color: @primary; }
+QLabel#stepDone { font-size: 21px; color: @on_surface_var; }
+QLabel#stepNumberTodo { background: @surface_3; color: @on_surface_var; font-size: 19px;
+                        font-weight: 500; border-radius: 19px; }
+QLabel#stepNumberNow { background: @primary; color: @on_primary; font-size: 19px;
+                       font-weight: 500; border-radius: 19px; }
+QLabel#stepNumberDone { background: @ok; color: @on_primary; font-size: 19px;
+                        font-weight: 500; border-radius: 19px; }
+QFrame#stepRule { background: @outline_var; border: 0; max-height: 2px; }
+
+/* ---------------------------------------------------------------- keyboard */
+QWidget#keyboard { background: @surface_2; border-radius: 20px; }
+
+/* The banner was a plain QLabel before it grew an icon. Kept so a page that has not
+   been converted yet still comes out the right colour. */
+QLabel#banner { font-size: 25px; padding: 18px 20px; border-radius: 22px;
+                background: @surface_2; color: @on_surface; }
+QLabel#banner[severity="ok"] { background: @ok_container; color: @on_ok_container; }
+QLabel#banner[severity="attention"] { background: @warn_container;
+                                      color: @on_warn_container; }
+QLabel#banner[severity="alarm"] { background: @error_container;
+                                  color: @on_error_container; }

@@ -5,11 +5,12 @@ This file draws and forwards taps. Every decision about WHAT to draw was already
 in view_model.py and controller.py, which is why there is no logic here beyond layout.
 """
 import os
+import re
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from edgeface.common.log import get_logger
-from edgeface.kiosk import strings, view_model as vm
+from edgeface.kiosk import strings, theme, view_model as vm
 from edgeface.kiosk.widgets.numpad import NumPad
 from edgeface.kiosk.widgets.preview import PreviewWidget
 
@@ -22,8 +23,15 @@ ADMIN_GESTURE_MS = 3000       # long-press the corner to reach the admin screen
 
 
 def load_stylesheet():
-    with open(STYLE_PATH) as f:
-        return f.read()
+    """The stylesheet with its colour placeholders filled in from theme.py."""
+    import io
+
+    with io.open(STYLE_PATH, encoding="utf-8") as f:
+        qss = theme.apply_tokens(f.read())
+    leftover = set(re.findall(r"@[a-z_]+", qss))
+    if leftover:
+        LOG.warning("stylesheet has unknown colour names: %s", ", ".join(sorted(leftover)))
+    return qss
 
 
 class Page(QtWidgets.QWidget):
