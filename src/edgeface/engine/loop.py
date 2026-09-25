@@ -20,7 +20,10 @@ from edgeface.types import FaceObs, GuidanceCode
 # stage    : the stage that stopped the frame ("S1".."S8"), or None
 # obs      : FaceObs with everything computed so far
 # collector: COLLECTING | READY | LOW_QUALITY
-FrameOutcome = namedtuple("FrameOutcome", ["guidance", "stage", "obs", "collector", "reset"])
+# kept     : how many frames the collector is holding, for the kiosk's "k of N"
+FrameOutcome = namedtuple("FrameOutcome",
+                          ["guidance", "stage", "obs", "collector", "reset", "kept"])
+FrameOutcome.__new__.__defaults__ = (0,)
 
 
 @timed("e2e")
@@ -31,13 +34,15 @@ def process_frame(frame, models, cfg, collector):
     result = detect.detect(frame.image, models["detector"], cfg)
     if not result.ok:
         reset = collector.observe_miss(frame.ts, result.reason)
-        return FrameOutcome(result.reason, "S1", obs, collector.poll(frame.ts), reset)
+        return FrameOutcome(result.reason, "S1", obs, collector.poll(frame.ts), reset,
+                            collector.count)
 
     result = subject.choose_subject(result.data, frame.image.shape, cfg)
     if not result.ok:
         reset = collector.observe_miss(frame.ts, result.reason)
         return FrameOutcome(result.reason, "S2", obs._replace(det=result.data),
-                            collector.poll(frame.ts), reset)
+                            collector.poll(frame.ts), reset,
+                            collector.count)
     detection = result.data
     obs = obs._replace(det=detection)
 
@@ -45,14 +50,16 @@ def process_frame(frame, models, cfg, collector):
     if not result.ok:
         reset = collector.observe_miss(frame.ts, result.reason)
         return FrameOutcome(result.reason, "S3", obs._replace(pose_coarse=result.data),
-                            collector.poll(frame.ts), reset)
+                            collector.poll(frame.ts), reset,
+                            collector.count)
     obs = obs._replace(pose_coarse=result.data)
 
     result = antispoof.check_real(frame.image, detection, models, cfg)
     obs = obs._replace(spoof=result.data)
     if not result.ok:
         reset = collector.observe_miss(frame.ts, result.reason)
-        return FrameOutcome(result.reason, "S4", obs, collector.poll(frame.ts), reset)
+        return FrameOutcome(result.reason, "S4", obs, collector.poll(frame.ts), reset,
+                            collector.count)
 
     with timer("S5_landmark"):
         landmarks = models["landmark"].predict(frame.image, detection.bbox)
@@ -61,24 +68,28 @@ def process_frame(frame, models, cfg, collector):
     obs = obs._replace(pose_fine=result.data)
     if not result.ok:
         reset = collector.observe_miss(frame.ts, result.reason)
-        return FrameOutcome(result.reason, "S5", obs, collector.poll(frame.ts), reset)
+        return FrameOutcome(result.reason, "S5", obs, collector.poll(frame.ts), reset,
+                            collector.count)
 
     result = quality.image_quality(frame.image, detection.bbox, cfg)
     obs = obs._replace(iqa=result.data)
     if not result.ok:
         reset = collector.observe_miss(frame.ts, result.reason)
-        return FrameOutcome(result.reason, "S5", obs, collector.poll(frame.ts), reset)
+        return FrameOutcome(result.reason, "S5", obs, collector.poll(frame.ts), reset,
+                            collector.count)
 
     result = align_stage.align(frame.image, detection, landmarks, cfg)
     if not result.ok:
         reset = collector.observe_miss(frame.ts, result.reason)
-        return FrameOutcome(result.reason, "S6", obs, collector.poll(frame.ts), reset)
+        return FrameOutcome(result.reason, "S6", obs, collector.poll(frame.ts), reset,
+                            collector.count)
     obs = obs._replace(aligned=result.data)
 
     result = embed.embed(result.data, models["recognizer"], frame.frame_id, frame.ts)
     if not result.ok:
         reset = collector.observe_miss(frame.ts, result.reason)
-        return FrameOutcome(result.reason, "S7", obs, collector.poll(frame.ts), reset)
+        return FrameOutcome(result.reason, "S7", obs, collector.poll(frame.ts), reset,
+                            collector.count)
     embedding = result.data
     obs = obs._replace(embedding=embedding)
 
@@ -89,7 +100,8 @@ def process_frame(frame, models, cfg, collector):
     }, cfg)
     reset = collector.add(embedding, score, detection.bbox, frame.ts)
     obs = obs._replace(quality=score)
-    return FrameOutcome(None, None, obs, collector.poll(frame.ts), reset)
+    return FrameOutcome(None, None, obs, collector.poll(frame.ts), reset,
+                            collector.count)
 
 
 def guidance_of(outcome):

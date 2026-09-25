@@ -207,3 +207,82 @@ def test_camera_error_closes_the_session_and_recovers(cfg):
     assert session.on_camera_error(T0 + 2) == []          # no repeated alarms
     actions = session.on_camera_ok(T0 + 3)
     assert session.state == sm.IDLE and kinds(actions) == [sm.PUBLISH]
+
+
+# ---------------------------------------------------------------- telemetry
+def full_obs(**kwargs):
+    from edgeface.types import Detection
+
+    fields = dict(frame_id=1, ts=T0, det=Detection(bbox=(0, 0, 10, 10), score=0.93,
+                                                   kps=None),
+                  pose_coarse={"yaw": 3.4, "roll": 1.2},
+                  spoof=SpoofScore(0.412, None, 0, {}),
+                  pose_fine={"yaw": 8.6, "pitch": -2.1, "roll": 0.4},
+                  iqa={"blur": 41.7, "lum": 52.2}, quality=0.9123)
+    fields.update(kwargs)
+    return FaceObs(**fields)
+
+
+def test_telemetry_quantises_what_the_kiosk_shows():
+    """Whole degrees and two decimals: the row is written on change, and a hundredth of
+    a degree of yaw is the camera breathing, not something changing."""
+    numbers = sm.telemetry(FrameOutcome(None, None, full_obs(), bf.COLLECTING, None, 3),
+                           k_max=5)
+    assert numbers["blur"] == 42 and numbers["lum"] == 52
+    assert numbers["yaw"] == 9 and numbers["pitch"] == -2 and numbers["roll"] == 0
+    assert numbers["p_real"] == 0.41 and numbers["quality"] == 0.91
+    assert numbers["det_score"] == 0.93
+    assert numbers["kept"] == 3 and numbers["need"] == 5
+
+
+def test_telemetry_reports_only_the_stages_the_frame_reached():
+    """A frame turned away at S2 has no blur; the missing key is how the kiosk knows."""
+    obs = FaceObs(frame_id=1, ts=T0, det=None)
+    numbers = sm.telemetry(FrameOutcome(GuidanceCode.NO_FACE, "S1", obs, bf.COLLECTING,
+                                        None, 0))
+    assert numbers["stage"] == "S1"
+    for absent in ("blur", "lum", "yaw", "p_real", "quality", "det_score"):
+        assert absent not in numbers
+
+
+def test_telemetry_falls_back_to_the_coarse_angles():
+    obs = full_obs(pose_fine=None)
+    numbers = sm.telemetry(FrameOutcome(GuidanceCode.LOOK_STRAIGHT, "S3", obs,
+                                        bf.COLLECTING, None, 0))
+    assert numbers["yaw"] == 3 and "pitch" not in numbers
+
+
+def test_the_guidance_publish_carries_the_numbers(cfg):
+    session = sm.Session(cfg)
+    session.on_frame(outcome(GuidanceCode.STEP_CLOSER), T0)
+    actions = session.on_frame(
+        FrameOutcome(GuidanceCode.TOO_DARK, "S5", full_obs(), bf.COLLECTING, None, 2),
+        T0 + 0.1)
+    assert payload_of(actions, sm.PUBLISH)["telemetry"]["lum"] == 52
+
+
+def test_the_nurse_screen_gets_the_worst_spoof_score_not_the_last_one(cfg):
+    """One convincing frame at the end does not undo why this session raised the alarm."""
+    session = sm.Session(cfg)
+    session.on_frame(outcome(GuidanceCode.SPOOF_SUSPECT, p_real=0.12), T0)
+    session.on_frame(outcome(GuidanceCode.SPOOF_SUSPECT, p_real=0.44), T0 + 0.1)
+    actions = session.on_decision(decision(Decision.SPOOF_SUSPECT), T0 + 0.2)
+    assert payload_of(actions, sm.PUBLISH)["telemetry"]["p_real"] == 0.12
+
+
+def test_the_enrolment_publish_says_how_many_shots_are_wanted(cfg):
+    session = sm.Session(cfg)
+    session.on_command({"type": "start_enroll", "payload": {"patient_code": "BN013"}}, T0)
+    actions = session.on_frame(outcome(GuidanceCode.LOOK_STRAIGHT), T0 + 0.1)
+    payload = payload_of(actions, sm.PUBLISH)
+    assert payload["total"] == cfg["enroll"]["num_templates"]
+    assert "telemetry" in payload
+
+
+def test_telemetry_can_be_switched_off(cfg):
+    quiet = dict(cfg)
+    quiet["engine"] = {"telemetry": False}
+    session = sm.Session(quiet)
+    session.on_frame(outcome(GuidanceCode.STEP_CLOSER), T0)
+    actions = session.on_frame(outcome(GuidanceCode.TOO_DARK), T0 + 0.1)
+    assert payload_of(actions, sm.PUBLISH)["telemetry"] == {}

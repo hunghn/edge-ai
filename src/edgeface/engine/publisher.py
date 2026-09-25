@@ -18,6 +18,12 @@ LOG = get_logger("publisher")
 
 HEARTBEAT_S = 0.5
 
+# Payload blocks that move on their own. They are carried to the kiosk but never counted
+# as "something changed": blur and yaw differ on every frame, so letting them into the
+# comparison would turn a row written on change into a row written fifteen times a
+# second. They ride along with the next publish, which is at most one every HEARTBEAT_S.
+VOLATILE = ("telemetry", "device")
+
 
 class Publisher(object):
     def __init__(self, conn, cfg):
@@ -31,17 +37,51 @@ class Publisher(object):
         self._last_args = None
         self._last_publish = 0.0
         self._last_preview = 0.0
+        self._device = {}
+        self._fps = None
+
+    def set_device(self, metrics):
+        """RAM, temperature and CPU for the status screen. {} when nothing reads them."""
+        self._device = dict(metrics or {})
+
+    def set_fps(self, fps):
+        self._fps = None if fps is None else round(float(fps), 1)
+
+    @staticmethod
+    def _key(state, guidance, session_id, payload):
+        stable = None
+        if payload:
+            stable = dict((k, v) for k, v in payload.items() if k not in VOLATILE)
+        return (state, guidance, session_id,
+                json.dumps(stable, sort_keys=True) if stable else None)
+
+    def _augment(self, payload):
+        """Fold in the engine-wide numbers just before the row is written.
+
+        Kept out of _last_args so a heartbeat carries today's frame rate rather than
+        re-publishing the one measured when the state last changed.
+        """
+        if not self._device and self._fps is None:
+            return payload
+        body = dict(payload or {})
+        if self._device:
+            body["device"] = self._device
+        if self._fps is not None:
+            numbers = dict(body.get("telemetry") or {})
+            numbers["fps"] = self._fps
+            body["telemetry"] = numbers
+        return body
 
     def publish(self, state, guidance=None, session_id=None, payload=None, now=None,
                 force=False):
         """Write kiosk_state when something changed, or every HEARTBEAT_S regardless."""
         now = clock.now() if now is None else now
-        key = (state, guidance, session_id, json.dumps(payload, sort_keys=True)
-               if payload else None)
+        key = self._key(state, guidance, session_id, payload)
         if not force and key == self._last_key and (now - self._last_publish) < HEARTBEAT_S:
             return None
+        body = self._augment(payload)
         with transaction(self.conn):
-            seq = kiosk_ipc.publish_state(self.conn, state, guidance, session_id, payload, now)
+            seq = kiosk_ipc.publish_state(self.conn, state, guidance, session_id, body, now)
         self._last_key = key
         self._last_args = (state, guidance, session_id, payload)
         self._last_publish = now

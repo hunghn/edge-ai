@@ -130,6 +130,10 @@ sync:                             # server connection; secrets come from the env
   bundle_key_path: /etc/edgeface/bundle.key
   backoff: {base_s: 5.0, max_s: 600.0, jitter: 0.2}
 
+engine:                           # what the engine tells the kiosk about itself
+  telemetry: true                 # per-frame numbers: quality, p_real, blur, lum, angles
+  device_metrics: true            # RAM/temperature/CPU from tegrastats (needs no root)
+
 kiosk:
   hide_cursor: true               # false while driving the kiosk with a mouse
   face_box: true                  # outline the detected face on the preview

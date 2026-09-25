@@ -12,6 +12,7 @@ Offline use (dev machine, recorded video, nobody at the kiosk):
     python3 -m edgeface.engine --config configs/dev.yaml --auto-nurse confirm --max-frames 300
 """
 import argparse
+import collections
 import os
 import signal
 import sys
@@ -27,6 +28,7 @@ from edgeface.engine.publisher import Publisher
 from edgeface.engine.session import Session
 from edgeface.gallery import retention
 from edgeface.gallery.gallery import Gallery
+from edgeface.metrics.tegrastats import TegrastatsMonitor
 from edgeface.pipeline import best_frame as bf
 from edgeface.pipeline import detect as detect_stage
 from edgeface.pipeline import matcher
@@ -67,6 +69,16 @@ class Engine(object):
         self._last_box_detect = None
         self.enroll_face = None                     # JPEG of this enrolment's best crop
         self._enroll_face_q = -1.0
+        # Frame rate and board health, for the kiosk's status screen. Both ride in the
+        # kiosk_state payload rather than a table of their own: the row is already being
+        # written twice a second, and nothing else needs to keep them.
+        self._frame_ts = collections.deque(maxlen=16)
+        self._device = None
+        self._last_device_read = 0.0
+        if (cfg.get("engine") or {}).get("device_metrics", True):
+            self._device = TegrastatsMonitor(interval_ms=1000, max_samples=4).start()
+            if not self._device.available:
+                LOG.info("tegrastats is not on this machine; no board metrics")
 
         closed = sessions.close_dangling(self.conn)   # sessions left open by a crash
         if closed:
@@ -92,6 +104,37 @@ class Engine(object):
         if self.enroll_face is None or quality is None or quality >= self._enroll_face_q:
             self.enroll_face = faces.encode(outcome.obs.aligned)
             self._enroll_face_q = -1.0 if quality is None else float(quality)
+
+    # ------------------------------------------------------------------ instrumentation
+    DEVICE_PERIOD_S = 2.0
+
+    def _measure(self, frame, now):
+        """Frame rate from the capture timestamps, board health from tegrastats."""
+        self._frame_ts.append(frame.ts)
+        if len(self._frame_ts) > 1:
+            span = self._frame_ts[-1] - self._frame_ts[0]
+            if span > 0:
+                self.publisher.set_fps((len(self._frame_ts) - 1) / span)
+        if self._device is None or not self._device.available:
+            return
+        if (now - self._last_device_read) < self.DEVICE_PERIOD_S:
+            return
+        self._last_device_read = now
+        sample = self._device.latest()
+        if not sample:
+            return
+        board = {}
+        if sample.get("ram_used_mb") is not None:
+            board["ram_mb"] = int(sample["ram_used_mb"])
+            board["ram_total_mb"] = int(sample.get("ram_total_mb") or 0)
+        temps = sample.get("temp_c") or {}
+        # Whichever zone runs hottest: the nurse needs one number, not six.
+        if temps:
+            board["temp_c"] = int(round(max(temps.values())))
+        cores = sample.get("cpu_pct")
+        if cores:
+            board["cpu_pct"] = int(round(sum(cores) / float(len(cores))))
+        self.publisher.set_device(board)
 
     # ------------------------------------------------------------------ face outline
     def _remember_box(self, detection, image_shape, good):
@@ -309,6 +352,7 @@ class Engine(object):
 
         self._execute(self.session.on_camera_ok(now), now)
         self.last_frame = frame
+        self._measure(frame, now)
 
         busy = self.session.state in (session_mod.AWAIT_NURSE, session_mod.COOLDOWN,
                                       session_mod.ENROLL_REVIEW, session_mod.ENROLL_ERROR)
@@ -370,6 +414,8 @@ class Engine(object):
         if self.session.session_id is not None:
             self._close_session({"nurse_action": "cancel"}, now)
         self.capture.stop()
+        if self._device is not None and self._device.available:
+            self._device.stop()
         close_models(self.models)
         summary = RECORDER.summary()
         if summary:

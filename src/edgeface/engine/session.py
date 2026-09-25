@@ -46,6 +46,46 @@ Action = namedtuple("Action", ["kind", "payload"])
 Action.__new__.__defaults__ = (None,)
 
 
+def telemetry(outcome, k_max=None):
+    """The numbers behind the guidance line, for the kiosk to show beside it.
+
+    Quantised on the way out. These values ride in the kiosk_state row, which the engine
+    is careful to write only when something changed; a hundredth of a degree of yaw is
+    not something changing, it is a camera being a camera.
+
+    Only what the frame actually reached is included: a frame turned away at S2 has no
+    blur to report, and an absent key is how the kiosk knows not to draw that row.
+    """
+    obs = getattr(outcome, "obs", None)
+    out = {"stage": outcome.stage, "kept": outcome.kept}
+    if k_max:
+        out["need"] = int(k_max)
+    if obs is None:
+        return out
+    # getattr rather than attribute access: this runs on every frame and a decorative
+    # number is never worth an exception in the capture loop.
+    score = getattr(obs.det, "score", None)
+    if score is not None:
+        out["det_score"] = round(float(score), 2)
+    p_real = getattr(obs.spoof, "p_real", None)
+    if p_real is not None:
+        out["p_real"] = round(float(p_real), 2)
+    if isinstance(obs.iqa, dict):
+        for key in ("blur", "lum"):
+            if obs.iqa.get(key) is not None:
+                out[key] = int(round(float(obs.iqa[key])))
+    # The fine pose is the one the gate at S5 uses; before that stage runs, the coarse
+    # angles off the five keypoints are the best answer available.
+    angles = obs.pose_fine if isinstance(obs.pose_fine, dict) else obs.pose_coarse
+    if isinstance(angles, dict):
+        for key in ("yaw", "pitch", "roll"):
+            if angles.get(key) is not None:
+                out[key] = int(round(float(angles[key])))
+    if obs.quality is not None:
+        out["quality"] = round(float(obs.quality), 2)
+    return out
+
+
 class Session(object):
     """Current state plus the counters a decision needs.
 
@@ -68,6 +108,7 @@ class Session(object):
         self.decision = None
         self.enroll_form = None
         self.enroll_error = None
+        self.last_telemetry = {}
 
     # ------------------------------------------------------------------ helpers
     def _enter(self, state, now):
@@ -108,6 +149,8 @@ class Session(object):
 
     def on_frame(self, outcome, now):
         """A processed frame. Returns the actions the runner must perform."""
+        if (self.cfg.get("engine") or {}).get("telemetry", True):
+            self.last_telemetry = telemetry(outcome, self.cfg["best_frame"]["k_max"])
         if self.is_enrolling():
             return self._on_frame_enroll(outcome, now)
         return self._on_frame_identify(outcome, now)
@@ -152,7 +195,8 @@ class Session(object):
             if target != self.state:
                 self._enter(target, now)
             actions.append(Action(PUBLISH, {"state": self.state,
-                                            "guidance": outcome.guidance}))
+                                            "guidance": outcome.guidance,
+                                            "telemetry": self.last_telemetry}))
         return actions
 
     def _on_frame_enroll(self, outcome, now):
@@ -176,7 +220,9 @@ class Session(object):
         if target != self.state:
             self._enter(target, now)
         actions.append(Action(PUBLISH, {"state": self.state, "guidance": outcome.guidance,
-                                        "progress": self.n_good_frames}))
+                                        "progress": self.n_good_frames,
+                                        "total": self.cfg["enroll"]["num_templates"],
+                                        "telemetry": self.last_telemetry}))
         return actions
 
     def on_decision(self, decision_result, now):
@@ -188,11 +234,20 @@ class Session(object):
         if decision_result.decision is Decision.SPOOF_SUSPECT:
             actions.append(Action(SAVE_EVIDENCE, {"session_id": self.session_id}))
         self._enter(AWAIT_NURSE, now)
+        # The numbers from the last frame, so the nurse screen can say why: which quality
+        # gate the rejected frames missed, or how low the anti-spoofing score went. The
+        # worst p_real of the attempt beats the last frame's - one convincing frame does
+        # not undo the reason this session is on the alarm screen.
+        numbers = dict(self.last_telemetry or {})
+        if self.min_p_real is not None:
+            numbers["p_real"] = round(float(self.min_p_real), 2)
+        numbers["good"] = self.n_good_frames
         actions.append(Action(PUBLISH, {
             "state": AWAIT_NURSE,
             "decision": decision_result.decision.value,
             "rule_id": decision_result.rule_id,
             "candidate": decision_result.candidate,
+            "telemetry": numbers,
             # Absolute deadline so the kiosk can count down without its own timer.
             "timeout_at": now + self.cfg["session"]["await_nurse_timeout_s"]}))
         return actions

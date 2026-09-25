@@ -8,6 +8,7 @@ Sample line (Jetson Nano, JetPack 4.6):
 Fields differ between JetPack versions, so every field is optional: the parser returns
 only what the line actually contains.
 """
+import collections
 import re
 import subprocess
 import threading
@@ -64,12 +65,15 @@ class TegrastatsMonitor(object):
     becomes False and `summary()` returns {}.
     """
 
-    def __init__(self, interval_ms=500, binary="tegrastats", sudo=False):
+    def __init__(self, interval_ms=500, binary="tegrastats", sudo=False,
+                 max_samples=0):
         self.interval_ms = interval_ms
         self.binary = binary
         self.sudo = sudo
         self.available = False
-        self.samples = []
+        # A benchmark wants every sample; a process that runs all day wants the last few
+        # and no growing list. max_samples=0 keeps the benchmark behaviour.
+        self.samples = collections.deque(maxlen=max_samples or None)
         self._proc = None
         self._thread = None
         self._stop = threading.Event()
@@ -98,6 +102,10 @@ class TegrastatsMonitor(object):
             sample = parse_line(line)
             if sample:
                 self.samples.append(sample)
+
+    def latest(self):
+        """The newest sample, or {} before the first line arrives."""
+        return self.samples[-1] if self.samples else {}
 
     def stop(self):
         self._stop.set()

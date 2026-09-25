@@ -126,3 +126,51 @@ def test_a_box_outside_the_frame_is_clipped_not_crashed(conn, cfg):
     assert pub.write_preview(grey, (-0.5, -0.5, 1.5, 1.5), T0, True) is True
     # A degenerate box draws nothing rather than raising.
     assert pub.write_preview(grey, (0.8, 0.8, 0.2, 0.2), T0 + 10, True) is True
+
+
+def test_moving_numbers_do_not_rewrite_the_row(conn, cfg):
+    """Telemetry changes on every frame; the row must still be written on change only.
+
+    Letting blur and yaw into the comparison would turn one write per state change into
+    fifteen writes a second onto the SD card the kiosk polls.
+    """
+    pub = Publisher(conn, cfg)
+    assert pub.publish("GUIDING", "STEP_CLOSER",
+                       payload={"telemetry": {"blur": 41}}, now=T0) == 1
+    assert pub.publish("GUIDING", "STEP_CLOSER",
+                       payload={"telemetry": {"blur": 44}}, now=T0 + 0.1) is None
+    assert pub.publish("GUIDING", "STEP_CLOSER",
+                       payload={"telemetry": {"blur": 52}}, now=T0 + 0.2) is None
+    # The heartbeat carries the newest numbers a moment later.
+    assert pub.publish("GUIDING", "STEP_CLOSER",
+                       payload={"telemetry": {"blur": 60}}, now=T0 + 0.6) == 2
+    assert kiosk_ipc.read_state(conn, after_seq=1)["payload"]["telemetry"]["blur"] == 60
+
+
+def test_a_real_change_still_writes_immediately(conn, cfg):
+    pub = Publisher(conn, cfg)
+    pub.publish("GUIDING", "STEP_CLOSER", payload={"telemetry": {"blur": 41}}, now=T0)
+    assert pub.publish("GUIDING", "LOOK_STRAIGHT",
+                       payload={"telemetry": {"blur": 41}}, now=T0 + 0.05) == 2
+
+
+def test_the_board_numbers_ride_along_with_the_state(conn, cfg):
+    pub = Publisher(conn, cfg)
+    pub.set_device({"ram_mb": 2100, "temp_c": 48})
+    pub.set_fps(12.44)
+    pub.publish("IDLE", now=T0)
+    payload = kiosk_ipc.read_state(conn, after_seq=0)["payload"]
+    assert payload["device"] == {"ram_mb": 2100, "temp_c": 48}
+    assert payload["telemetry"]["fps"] == 12.4
+
+
+def test_the_heartbeat_refreshes_the_board_numbers(conn, cfg):
+    """A heartbeat must not re-publish the readings taken when the state last changed."""
+    pub = Publisher(conn, cfg)
+    pub.set_device({"temp_c": 48})
+    pub.publish("AWAIT_NURSE", payload={"decision": "review_required"}, now=T0)
+    pub.set_device({"temp_c": 61})
+    assert pub.heartbeat(now=T0 + 0.6) == 2
+    payload = kiosk_ipc.read_state(conn, after_seq=1)["payload"]
+    assert payload["device"]["temp_c"] == 61
+    assert payload["decision"] == "review_required"
