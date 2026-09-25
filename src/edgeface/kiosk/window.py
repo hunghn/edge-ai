@@ -59,6 +59,7 @@ class AppBar(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super(AppBar, self).__init__(parent)
         self.setObjectName("appBar")
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.setFixedHeight(84)
         self._severity = None
         self._chips_shown = None
@@ -128,6 +129,7 @@ class CameraPanel(QtWidgets.QWidget):
     def __init__(self, roi=None, parent=None):
         super(CameraPanel, self).__init__(parent)
         self.setObjectName("cameraPanel")
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.preview = PreviewWidget(roi=roi)
         layout = QtWidgets.QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1346,6 +1348,18 @@ class KioskWindow(QtWidgets.QMainWindow):
     def mouseReleaseEvent(self, event):
         self._gesture.stop()
         super(KioskWindow, self).mouseReleaseEvent(event)
+
+    def closeEvent(self, event):
+        """Stop polling when the window goes away.
+
+        The timers outlive close() otherwise, and go on calling a controller whose
+        database connection has been closed - which in Qt means an exception inside a
+        slot, which means the process aborts rather than raises.
+        """
+        self._poll.stop()
+        self._preview_timer.stop()
+        self._gesture.stop()
+        super(KioskWindow, self).closeEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key_Escape:

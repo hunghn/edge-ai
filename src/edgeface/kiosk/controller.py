@@ -451,8 +451,11 @@ class KioskController(object):
                                    buttons=tuple(buttons))
 
         if self.local_screen == view_model.STATUS:
+            # The sync request is confirmed here or nowhere: it is the only thing on
+            # this screen a nurse can set off, and it has nothing else to show for it.
             return view_model.View(screen=view_model.STATUS, title=strings.STATUS_TITLE,
-                                   message="", severity=view_model.OK,
+                                   message=context.get("notice") or "",
+                                   severity=view_model.OK,
                                    fields=self.status_rows(now),
                                    buttons=(view_model.Button("cancel",
                                                               strings.BTN_BACK_TO_MENU,

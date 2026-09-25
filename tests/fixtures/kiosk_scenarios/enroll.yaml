@@ -1,9 +1,14 @@
 name: Đăng ký bệnh nhân mới
 steps:
-  - {state: ENROLL_GUIDING, guidance: STEP_CLOSER, hold: 1.0, payload: {progress: 0, total: 5}}
-  - {state: ENROLL_COLLECTING, hold: 1.0, payload: {progress: 2, total: 5}}
-  - {state: ENROLL_COLLECTING, hold: 1.0, payload: {progress: 4, total: 5}}
+  - {state: ENROLL_GUIDING, hold: 1.0,
+     payload: {progress: 0, total: 5, telemetry: {stage: S2, kept: 0, need: 5, fps: 13.1}}}
+  - {state: ENROLL_COLLECTING, hold: 1.2,
+     payload: {progress: 2, total: 5,
+               telemetry: {kept: 2, need: 5, fps: 13.1, quality: 0.89}}}
+  - {state: ENROLL_COLLECTING, hold: 1.2,
+     payload: {progress: 4, total: 5,
+               telemetry: {kept: 4, need: 5, fps: 13.0, quality: 0.92}}}
   - {state: ENROLL_REVIEW, hold: 4.0,
-     payload: {n_templates: 5, warnings: [duplicate_unknown_threshold], duplicate_code: BN001,
-               self_consistency: 0.97}}
+     payload: {n_templates: 5, self_consistency: 0.97,
+               warnings: [duplicate_unknown_threshold], duplicate_code: BN001}}
   - {state: COOLDOWN, hold: 1.0}

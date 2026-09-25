@@ -1,0 +1,13 @@
+name: Không có trong danh sách hôm nay
+patients:
+  - {patient_code: BN001, full_name: "Nguyễn Thị Hà", birth_year: 1990}
+  - {patient_code: BN002, full_name: "Trần Văn Bình", birth_year: 1988}
+steps:
+  - {state: GUIDING, guidance: STEP_CLOSER, hold: 0.8,
+     payload: {telemetry: {stage: S2, kept: 0, need: 5, fps: 12.2}}}
+  - {state: COLLECTING, hold: 1.0,
+     payload: {telemetry: {stage: null, kept: 5, need: 5, fps: 12.2, quality: 0.88}}}
+  - {state: AWAIT_NURSE, hold: 4.0,
+     payload: {decision: no_match, rule_id: R4, candidate: null,
+               telemetry: {quality: 0.88, good: 5, need: 5, fps: 12.2}}}
+  - {state: IDLE, hold: 0.5}

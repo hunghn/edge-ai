@@ -1,0 +1,15 @@
+name: Khuôn mặt đã có trong hệ thống
+patients:
+  - {patient_code: BN001, full_name: "Nguyễn Thị Hà", birth_year: 1990}
+steps:
+  - {state: ENROLL_GUIDING, guidance: LOOK_STRAIGHT, hold: 0.8,
+     payload: {progress: 0, total: 5, telemetry: {stage: S3, kept: 0, need: 5, fps: 12.9}}}
+  - {state: ENROLL_COLLECTING, hold: 1.0,
+     payload: {progress: 3, total: 5,
+               telemetry: {kept: 3, need: 5, fps: 12.9, quality: 0.9}}}
+  - {state: ENROLL_REVIEW, hold: 5.0,
+     payload: {n_templates: 5, self_consistency: 0.96,
+               warnings: [duplicate_unknown_threshold],
+               duplicate_code: BN001, duplicate_score: 0.81,
+               duplicates: [{code: BN001, score: 0.81}, {code: BN002, score: 0.74}]}}
+  - {state: COOLDOWN, hold: 1.0}

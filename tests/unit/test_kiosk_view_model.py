@@ -1,10 +1,19 @@
 # -*- coding: utf-8 -*-
 """What the kiosk shows for each engine state."""
+import os
+
 import pytest
 
+from edgeface import config as cfg_mod
 from edgeface.kiosk import strings, view_model as vm
 
 T0 = 1000.0
+
+
+@pytest.fixture
+def cfg(repo_root):
+    """The real thresholds, so a metric row is checked against the shipped limits."""
+    return cfg_mod.load_config(os.path.join(repo_root, "configs", "dev.yaml"))
 
 
 def state(engine_state, guidance=None, payload=None, seq=1, session_id="s1"):
@@ -178,3 +187,94 @@ def test_switching_the_score_off_hides_the_runner_up_too():
     payload["candidate"]["top2_score"] = 0.79
     view = vm.build(state("AWAIT_NURSE", payload=payload), T0, {}, show_score=False)
     assert strings.LABEL_LOOKALIKE not in dict(view.fields)
+
+
+# ---------------------------------------------------------------- the redesign
+def test_the_stepper_marks_the_gate_the_frame_stopped_at():
+    """Standing in front of a silent screen is what the stepper is there to fix."""
+    view = vm.build(state("GUIDING", guidance="STEP_CLOSER"), T0, last_update=T0)
+    assert view.steps == (vm.DONE, vm.NOW, vm.TODO, vm.TODO, vm.TODO)
+    view = vm.build(state("GUIDING", guidance="TOO_DARK"), T0, last_update=T0)
+    assert view.steps == (vm.DONE, vm.DONE, vm.DONE, vm.NOW, vm.TODO)
+
+
+def test_a_frame_that_passed_everything_is_waiting_on_the_match():
+    view = vm.build(state("COLLECTING"), T0, last_update=T0)
+    assert view.steps[-1] == vm.NOW and view.steps[0] == vm.DONE
+
+
+def test_the_stepper_falls_back_to_the_stage_when_the_code_is_unknown():
+    row = state("GUIDING", guidance="SOMETHING_NEW")
+    row["payload"] = {"telemetry": {"stage": "S2"}}
+    assert vm.build(row, T0, last_update=T0).steps[1] == vm.NOW
+
+
+def test_the_shot_counter_appears_only_once_the_engine_counts():
+    assert vm.build(state("COLLECTING"), T0, last_update=T0).progress is None
+    row = state("COLLECTING")
+    row["payload"] = {"telemetry": {"kept": 2, "need": 5}}
+    assert vm.build(row, T0, last_update=T0).progress == (2, 5)
+
+
+def test_a_quality_number_is_shown_against_the_threshold_it_missed(cfg):
+    """"Độ nét 41" tells a nurse nothing; "41 < 60" tells them to steady the patient."""
+    numbers = {"blur": 41, "lum": 52, "yaw": 4}
+    rows = dict((label, value) for label, value, _tone in
+                vm.quality_metrics(numbers, cfg))
+    assert rows[strings.METRIC_BLUR] == "41 < 60"
+    assert rows[strings.METRIC_LUM] == "52 < 60"
+    assert rows[strings.METRIC_POSE].startswith("4")
+
+
+def test_without_the_config_there_is_nothing_to_compare_against():
+    assert vm.quality_metrics({"blur": 41}, None) == ()
+
+
+def test_the_low_quality_screen_carries_the_numbers(cfg):
+    row = state("AWAIT_NURSE", payload={"decision": "low_quality",
+                                        "telemetry": {"blur": 41, "good": 2, "need": 5}})
+    view = vm.build(row, T0, last_update=T0, cfg=cfg)
+    assert view.screen == vm.ALERT
+    assert any(label == strings.METRIC_BLUR for label, _v, _t in view.metrics)
+    assert view.chips and "2/5" in view.chips[0][0]
+
+
+def test_the_spoof_screen_shows_the_score_but_never_the_patient(cfg):
+    row = state("AWAIT_NURSE", payload={"decision": "spoof_suspect",
+                                        "candidate": {"code": "BN001", "score": 0.9},
+                                        "telemetry": {"p_real": 0.41}})
+    view = vm.build(row, T0, last_update=T0, cfg=cfg)
+    assert view.fields == ()
+    assert "0.41" in view.chips[0][0]
+    assert "BN001" not in view.chips[0][0]
+
+
+def test_the_diagnostic_chips_go_away_with_the_score(cfg):
+    row = state("AWAIT_NURSE", payload={"decision": "spoof_suspect",
+                                        "telemetry": {"p_real": 0.41}})
+    assert vm.build(row, T0, last_update=T0, show_score=False, cfg=cfg).chips == ()
+
+
+def test_the_camera_tags_are_diagnostics_too():
+    assert vm.camera_tags({"fps": 12.4, "quality": 0.91}, show_score=False) == ()
+    left, right = vm.camera_tags({"fps": 12.4})
+    assert "12.4" in left and right == ""
+
+
+def test_an_engine_that_sends_no_telemetry_still_renders():
+    """The kiosk has to keep working against an engine that predates the payload."""
+    view = vm.build(state("AWAIT_NURSE", payload={"decision": "low_quality"}), T0,
+                    last_update=T0, cfg=None)
+    assert view.screen == vm.ALERT
+    assert view.metrics == () and view.chips == ()
+
+
+def test_the_enrolment_view_numbers_its_steps():
+    collecting = vm.build(state("ENROLL_COLLECTING", payload={"progress": 3, "total": 5}),
+                          T0, last_update=T0)
+    assert collecting.step == 1 and collecting.progress == (3, 5)
+    review = vm.build(state("ENROLL_REVIEW", payload={"n_templates": 5,
+                                                      "self_consistency": 0.94}),
+                      T0, last_update=T0)
+    assert review.step == 2
+    assert dict((l, v) for l, v, _t in review.metrics)[strings.ENROLL_CONSISTENCY] == "0.94"

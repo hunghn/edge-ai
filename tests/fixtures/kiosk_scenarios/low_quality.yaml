@@ -1,6 +1,10 @@
 name: Ảnh không đạt chất lượng
 steps:
-  - {state: GUIDING, guidance: TOO_DARK, hold: 1.0}
-  - {state: GUIDING, guidance: HOLD_STILL, hold: 1.0}
-  - {state: AWAIT_NURSE, hold: 3.0, payload: {decision: low_quality, rule_id: R2}}
+  - {state: GUIDING, guidance: TOO_DARK, hold: 1.0,
+     payload: {telemetry: {stage: S5, kept: 1, need: 5, fps: 11.8, blur: 41, lum: 52}}}
+  - {state: GUIDING, guidance: HOLD_STILL, hold: 1.0,
+     payload: {telemetry: {stage: S5, kept: 2, need: 5, fps: 11.9, blur: 44, lum: 58}}}
+  - {state: AWAIT_NURSE, hold: 3.0,
+     payload: {decision: low_quality, rule_id: R2,
+               telemetry: {blur: 41, lum: 52, yaw: 9, good: 2, need: 5, fps: 11.8}}}
   - {state: IDLE, hold: 0.5}

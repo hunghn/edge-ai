@@ -8,7 +8,7 @@ layout waits on D-25 together with the screen size.
 from PyQt5 import QtCore, QtWidgets
 
 from edgeface.kiosk import theme
-from edgeface.kiosk.widgets import icons
+from edgeface.kiosk.widgets import components, icons
 
 LETTERS = ("qwertyuiop", "asdfghjkl", "zxcvbnm")
 DIGITS = ("1234567890", "-./:", "")
@@ -22,6 +22,7 @@ class SoftKeyboard(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super(SoftKeyboard, self).__init__(parent)
         self.setObjectName("keyboard")
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self._numeric = False
         self._target = None
         self._keys = []
@@ -41,6 +42,9 @@ class SoftKeyboard(QtWidgets.QWidget):
         button = QtWidgets.QPushButton("" if icon_name else text)
         button.setObjectName("kbKey")
         button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        # A key that takes the focus takes it away from the field being typed into, and
+        # every following letter then goes to whichever field had it first.
+        button.setFocusPolicy(QtCore.Qt.NoFocus)
         if icon_name:
             button.setIcon(icons.icon(icon_name, 22, theme.colour("on_surface_var")))
             button.setIconSize(QtCore.QSize(22, 22))
@@ -52,10 +56,10 @@ class SoftKeyboard(QtWidgets.QWidget):
         """Lay the keys out once; switching layouts only relabels them."""
         rows = DIGITS if self._numeric else LETTERS
         for box in self._rows:
-            while box.count():
-                item = box.takeAt(0)
-                if item.widget() is not None:
-                    item.widget().deleteLater()
+            # deleteLater leaves the old keys on screen until the event loop gets to
+            # them, and a letter tapped in that window goes to a key that is no longer
+            # part of this layout.
+            components.clear_layout(box)
         self._keys = []
 
         for index, row in enumerate(rows):

@@ -3,12 +3,18 @@ patients:
   - {patient_code: BN001, full_name: "Nguyễn Thị Hà", birth_year: 1990, appointment_code: AP001}
 steps:
   - {state: IDLE, hold: 1.0}
-  - {state: GUIDING, guidance: NO_FACE, hold: 0.8}
-  - {state: GUIDING, guidance: STEP_CLOSER, hold: 1.2}
-  - {state: GUIDING, guidance: LOOK_STRAIGHT, hold: 1.0}
-  - {state: COLLECTING, hold: 1.2}
+  - {state: GUIDING, guidance: NO_FACE, hold: 0.8,
+     payload: {telemetry: {stage: S1, kept: 0, need: 5, fps: 12.4}}}
+  - {state: GUIDING, guidance: STEP_CLOSER, hold: 1.2,
+     payload: {telemetry: {stage: S2, kept: 0, need: 5, fps: 12.4, det_score: 0.88}}}
+  - {state: GUIDING, guidance: LOOK_STRAIGHT, hold: 1.0,
+     payload: {telemetry: {stage: S3, kept: 1, need: 5, fps: 12.6, yaw: 28, roll: 4}}}
+  - {state: COLLECTING, hold: 1.2,
+     payload: {telemetry: {stage: null, kept: 3, need: 5, fps: 12.4, quality: 0.91,
+                           blur: 84, lum: 128, yaw: 6, pitch: 2, roll: 1}}}
   - {state: AWAIT_NURSE, hold: 4.0,
      payload: {decision: review_required, rule_id: R3,
+               telemetry: {quality: 0.91, good: 5, need: 5, fps: 12.4},
                candidate: {code: BN001, score: 0.81, margin: 0.22, votes: 5, k: 5}}}
   - {state: COOLDOWN, hold: 1.0}
   - {state: IDLE, hold: 0.5}

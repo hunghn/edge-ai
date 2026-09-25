@@ -22,6 +22,7 @@ class NavRail(QtWidgets.QWidget):
     def __init__(self, items, footer=None, parent=None):
         super(NavRail, self).__init__(parent)
         self.setObjectName("rail")
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.setFixedWidth(184)
         self._active = None
         self.buttons = {}

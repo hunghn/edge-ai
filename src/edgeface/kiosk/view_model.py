@@ -334,7 +334,7 @@ def _duplicate_view(payload, warnings, duplicates):
     message = (strings.DUPLICATE_UNCALIBRATED
                if "duplicate_unknown_threshold" in warnings else strings.DUPLICATE_HINT)
     return View(screen=DUPLICATE, title=strings.DUPLICATE_TITLE, message=message,
-                severity=ATTENTION, fields=rows,
+                severity=ATTENTION, fields=rows, show_preview=True,
                 buttons=(Button("enroll_confirm", strings.BTN_SAVE_ANYWAY_LONG,
                                 "enroll_confirm"),
                          Button("enroll_cancel", strings.BTN_CANCEL_AND_LOOKUP,

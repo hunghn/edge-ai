@@ -21,7 +21,7 @@ class ConfirmDialog(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super(ConfirmDialog, self).__init__(parent)
         self.setObjectName("scrim")
-        self.setAutoFillBackground(True)
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         self.hide()
 
         outer = QtWidgets.QVBoxLayout(self)

@@ -1,8 +1,11 @@
 name: Nghi ngờ giả mạo
 steps:
-  - {state: GUIDING, guidance: STEP_CLOSER, hold: 0.8}
-  - {state: COLLECTING, hold: 0.8}
+  - {state: GUIDING, guidance: LOOK_STRAIGHT, hold: 1.0,
+     payload: {telemetry: {stage: S3, kept: 0, need: 5, fps: 12.1}}}
+  - {state: COLLECTING, hold: 1.0,
+     payload: {telemetry: {stage: S4, kept: 1, need: 5, fps: 12.1, p_real: 0.44}}}
   - {state: AWAIT_NURSE, hold: 4.0,
      payload: {decision: spoof_suspect, rule_id: R1,
-               candidate: {code: BN001, score: 0.9, margin: 0.3, votes: 5, k: 5}}}
+               telemetry: {p_real: 0.41, good: 0, need: 5, fps: 12.1},
+               candidate: null}}
   - {state: IDLE, hold: 0.5}

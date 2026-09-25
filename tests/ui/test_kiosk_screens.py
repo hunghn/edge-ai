@@ -64,8 +64,14 @@ def rendered_text(window):
     return " | ".join(w.text() for w in page.findChildren(QtWidgets.QLabel) if w.text())
 
 
-@pytest.mark.parametrize("scenario_name", ["identify", "spoof", "low_quality", "enroll",
-                                           "camera_error"])
+def _scenario_names():
+    """Every scenario on disk, so a new one is covered the moment it is written."""
+    import fake_engine
+
+    return sorted(fake_engine.list_scenarios())
+
+
+@pytest.mark.parametrize("scenario_name", _scenario_names())
 def test_every_scenario_renders(kiosk, scenario_name):
     """Play a whole scenario at full speed; no step may fail to draw."""
     import fake_engine
@@ -493,3 +499,128 @@ def test_saving_anyway_reaches_the_engine(kiosk):
     buttons_of(window)["Vẫn lưu hồ sơ mới"].click()
     sent = kiosk_ipc.claim_commands(controller.conn, at=1001.0)
     assert [c["type"] for c in sent] == ["enroll_confirm"]
+
+
+# ---------------------------------------------------------------- the redesign
+def test_the_rail_moves_between_admin_screens_without_going_back_to_a_menu(kiosk):
+    """The point of the rail: four destinations, no walking back up between jobs."""
+    window, controller = kiosk
+    enter_admin(window, controller)
+    enrol_patient(controller)
+
+    page = window.pages[vm.ADMIN]
+    page.rail.buttons["patients"].click()
+    assert window.stack.currentWidget() is window.pages[vm.PATIENTS]
+
+    window.pages[vm.PATIENTS].rail.buttons["status"].click()
+    assert window.stack.currentWidget() is window.pages[vm.STATUS]
+
+    window.pages[vm.STATUS].rail.buttons["logout"].click()
+    assert controller.auth.is_unlocked() is False
+
+
+def test_cancelling_the_revoke_dialog_keeps_the_patient(kiosk):
+    window, controller = kiosk
+    enter_admin(window, controller)
+    enrol_patient(controller)
+    buttons_of(window)["Bệnh nhân hôm nay"].click()
+    page = window.stack.currentWidget()
+    tap_row(page.rows, 0)
+    buttons_of(window)["Thu hồi"].click()
+
+    assert page.dialog.isVisible()
+    buttons_of(window)["Huỷ"].click()
+    assert not page.dialog.isVisible()
+    assert patients.get(controller.conn, "BN001") is not None
+
+
+def test_the_bin_on_a_row_asks_about_that_row(kiosk):
+    """Tapping the bin is a delete; tapping anywhere else on the row is a selection."""
+    from PyQt5 import QtCore, QtTest
+
+    window, controller = kiosk
+    enter_admin(window, controller)
+    enrol_patient(controller)
+    buttons_of(window)["Bệnh nhân hôm nay"].click()
+    page = window.stack.currentWidget()
+
+    item = page.rows.item(0)
+    rect = page.rows.visualItemRect(item)
+    bin_rect = page.rows.itemDelegate().trash_rect(rect)
+    QtTest.QTest.mouseClick(page.rows.viewport(), QtCore.Qt.LeftButton,
+                            QtCore.Qt.NoModifier, bin_rect.center())
+    assert page.dialog.isVisible()
+    assert "BN001" in rendered_text(window)
+
+
+def test_the_keyboard_types_into_the_field_that_has_the_focus(kiosk, qt_app):
+    """A touchscreen has no keys, so the form's four fields share one soft keyboard."""
+    from PyQt5 import QtWidgets
+
+    window, controller = kiosk
+    enter_admin(window, controller)
+    buttons_of(window)["Đăng ký bệnh nhân mới"].click()
+    form = window.enroll_form
+
+    form.inputs["patient_code"].setFocus()
+    qt_app.processEvents()
+    keys = {b.text(): b for b in form.keyboard.findChildren(QtWidgets.QPushButton)}
+    keys["123"].click()
+    keys = {b.text(): b for b in form.keyboard.findChildren(QtWidgets.QPushButton)}
+    for digit in "13":
+        keys[digit].click()
+    assert form.inputs["patient_code"].text() == "13"
+    assert form.inputs["full_name"].text() == ""
+
+    form.inputs["full_name"].setFocus()
+    qt_app.processEvents()
+    keys = {b.text(): b for b in form.keyboard.findChildren(QtWidgets.QPushButton)}
+    keys["ABC"].click()
+    keys = {b.text(): b for b in form.keyboard.findChildren(QtWidgets.QPushButton)}
+    keys["h"].click()
+    assert form.inputs["full_name"].text() == "h"
+    assert form.inputs["patient_code"].text() == "13"
+
+
+def candidate_payload():
+    return {"decision": "review_required", "rule_id": "R3",
+            "candidate": {"code": "BN001", "score": 0.8, "margin": 0.1, "votes": 5,
+                          "k": 5}}
+
+
+def test_the_answer_is_the_last_button_on_the_row(kiosk):
+    """Four buttons of equal weight made the nurse read all of them before choosing."""
+    window, controller = kiosk
+    publish(controller.conn, "AWAIT_NURSE", payload=candidate_payload())
+    window.refresh()
+    page = window.stack.currentWidget()
+
+    row = page.actions.buttons
+    labels = [row.itemAt(i).widget().text() for i in range(row.count())]
+    assert labels[-1] == "Xác nhận"
+    assert labels[-2] == "Không phải"
+    assert row.itemAt(row.count() - 1).widget().objectName() == "primary"
+    assert row.itemAt(row.count() - 2).widget().objectName() == "danger"
+
+
+def test_the_new_pages_are_not_rebuilt_on_every_redraw(kiosk):
+    """Same rule as the first version: a rebuild between press and release eats the tap."""
+    window, controller = kiosk
+    publish(controller.conn, "AWAIT_NURSE", payload=candidate_payload())
+    window.refresh()
+    page = window.stack.currentWidget()
+    confirm = buttons_of(window)["Xác nhận"]
+    avatar = page.avatar
+    for _ in range(5):
+        window.refresh()
+    assert buttons_of(window)["Xác nhận"] is confirm
+    assert page.avatar is avatar
+
+    enter_admin(window, controller)
+    enrol_patient(controller)
+    buttons_of(window)["Trạng thái hệ thống"].click()
+    status = window.stack.currentWidget()
+    tiles = list(status.tiles)
+    for _ in range(5):
+        window.refresh()
+    assert list(status.tiles) == tiles

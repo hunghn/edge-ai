@@ -359,3 +359,110 @@ def test_a_missing_preview_is_not_an_error(kiosk):
     """Normal while the engine starts up, or if /dev/shm was cleared."""
     assert kiosk.preview_changed() is False
     assert kiosk.preview_bytes() is None
+
+
+# ---------------------------------------------------------------- the redesign
+def unlock_admin(kiosk, conn, pin="123456"):
+    with db.transaction(conn):
+        operator = operators.create(conn, "Nurse A", pin, iterations=FAST, at=T0)
+    kiosk.unlock(operator, pin, T0)
+    return operator
+
+
+def test_patient_rows_say_where_a_record_came_from(kiosk, conn):
+    add_patient(conn, "BN001", "Nguyễn Thị Hà")
+    with db.transaction(conn):
+        patients.upsert_patient(conn, "BN002", "Trần Văn Bình", 1988, "server", T0)
+    rows = kiosk.patient_rows(T0)
+    assert "đăng ký tại kiosk" in rows["BN001"]["sub"]
+    assert "tải từ server" in rows["BN002"]["sub"]
+    assert rows["BN001"]["trash"] is True
+    assert rows["BN001"]["trailing"].startswith("hết hạn")
+
+
+def test_patient_rows_count_templates_in_one_query(kiosk, conn):
+    import numpy as np
+
+    add_patient(conn, "BN001", "Nguyễn Thị Hà")
+    with db.transaction(conn):
+        templates.add_templates(conn, "BN001",
+                                [np.zeros(512, dtype="float32") for _ in range(3)],
+                                "sha", created_at=T0)
+    assert "3 đặc trưng" in kiosk.patient_rows(T0)["BN001"]["sub"]
+
+
+def test_status_tiles_say_whether_the_number_is_good_news(kiosk, conn):
+    add_patient(conn, "BN001", "A")
+    kiosk.poll(T0)
+    tiles = dict((label, (value, foot, tone))
+                 for label, value, foot, tone in kiosk.status_tiles(T0))
+    assert tiles["Sự kiện chờ gửi"][0] == "0"
+    assert tiles["Sự kiện chờ gửi"][1] == "không còn gì chờ gửi"
+    assert tiles["Sự kiện chờ gửi"][2] == vm.OK
+    assert tiles["Trạng thái engine"][0] == "IDLE"
+
+
+def test_a_silent_engine_turns_its_tile_red(kiosk, conn):
+    kiosk.poll(T0)
+    tiles = dict((label, tone) for label, _v, _f, tone in kiosk.status_tiles(T0 + 60))
+    assert tiles["Trạng thái engine"] == vm.ALARM
+
+
+def test_the_board_numbers_reach_the_status_screen(kiosk, conn):
+    publish(conn, "IDLE", payload={"device": {"ram_mb": 2100, "ram_total_mb": 3956,
+                                              "temp_c": 48, "cpu_pct": 37},
+                                   "telemetry": {"fps": 12.4}})
+    kiosk.poll(T0)
+    tiles = dict((label, value) for label, value, _f, _t in kiosk.status_tiles(T0))
+    assert tiles["Tốc độ khung"] == "12.4"
+    assert tiles["RAM đang dùng"] == "2100"
+    assert tiles["Nhiệt độ"] == "48°C"
+    assert "RAM 2100 / 3956 MB" in kiosk.device_line()
+
+
+def test_the_status_screen_works_without_a_board_to_read(kiosk, conn):
+    """A dev machine has no tegrastats, and the screen must not invent numbers."""
+    kiosk.poll(T0)
+    labels = [label for label, _v, _f, _t in kiosk.status_tiles(T0)]
+    assert "RAM đang dùng" not in labels and "Nhiệt độ" not in labels
+
+
+def test_asking_for_a_sync_leaves_a_note_the_sync_process_reads(kiosk, conn):
+    from edgeface.storage.db import get_meta
+
+    unlock_admin(kiosk, conn)
+    kiosk.open_admin_tab(vm.STATUS)
+    kiosk.on_button(vm.Button("sync", "Đồng bộ ngay", None), T0)
+    assert float(get_meta(conn, "sync_requested_at")) == T0
+    assert "Đã yêu cầu đồng bộ" in kiosk.view(T0).message
+
+
+def test_the_admin_cards_carry_their_own_numbers(kiosk, conn):
+    add_patient(conn, "BN001", "Nguyễn Thị Hà")
+    unlock_admin(kiosk, conn)
+    kiosk.poll(T0)
+    summary = kiosk.admin_summary(T0)
+    assert "1 đang hoạt động" in summary["patients"]
+    assert "1 đăng ký tại kiosk" in summary["patients"]
+    assert "0 sự kiện chờ gửi" in summary["status"]
+    assert summary["change_pin"] == "chưa đổi lần nào"
+
+
+def test_the_pin_card_says_how_old_the_pin_is(kiosk, conn):
+    unlock_admin(kiosk, conn)
+    kiosk.submit_change_pin("123456", T0)
+    kiosk.submit_change_pin("654321", T0)
+    kiosk.submit_change_pin("654321", T0)
+    assert kiosk.admin_summary(T0 + 14 * 86400)["change_pin"] == "đổi lần cuối 14 ngày trước"
+
+
+def test_the_rail_way_out_logs_out_from_wherever_it_is_tapped(kiosk, conn):
+    """"cancel" is the back button; from the patient list it means up to the menu."""
+    unlock_admin(kiosk, conn)
+    kiosk.open_admin_tab(vm.PATIENTS)
+    kiosk.on_button(vm.Button("cancel", "Quay lại menu", None), T0)
+    assert kiosk.local_screen == vm.ADMIN and kiosk.auth.is_unlocked(T0)
+
+    kiosk.open_admin_tab(vm.PATIENTS)
+    kiosk.on_button(vm.Button("logout", "Thoát", None), T0)
+    assert kiosk.auth.is_unlocked(T0) is False and kiosk.local_screen is None
