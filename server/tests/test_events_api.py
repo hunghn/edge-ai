@@ -158,3 +158,19 @@ def test_heartbeat_updates_the_device_row(client, auth):
     with session_scope() as session:
         device = session.get(Device, "kiosk-01")
         assert device.last_gallery_version == 7 and device.last_seen_at is not None
+
+
+def test_a_settings_change_is_kept_as_an_audit_event(client, auth):
+    """A nurse changed the match threshold on the kiosk: the server keeps the record."""
+    event = {"event_id": event_id("settings1"), "type": "settings.changed",
+             "created_at": time.time(),
+             "payload": {"key": "match.threshold", "old": 0.8, "new": 0.85,
+                         "operator_id": 1}}
+    body = post(client, auth, [event]).json()
+    assert body["accepted"] == [event_id("settings1")] and body["rejected"] == []
+
+    from server.db import session_scope
+    from server.models import Event
+
+    with session_scope() as session:
+        assert session.get(Event, event_id("settings1")).type == "settings.changed"

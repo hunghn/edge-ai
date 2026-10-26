@@ -81,6 +81,11 @@ def telemetry(outcome, k_max=None):
         for key in ("yaw", "pitch", "roll"):
             if angles.get(key) is not None:
                 out[key] = int(round(float(angles[key])))
+    # The ratios S5 actually gates on (pose.face_ratios), when the frame got that far.
+    if isinstance(obs.pose_fine, dict):
+        for key in ("ud", "rl"):
+            if obs.pose_fine.get(key) is not None:
+                out[key] = round(float(obs.pose_fine[key]), 2)
     if obs.quality is not None:
         out["quality"] = round(float(obs.quality), 2)
     return out

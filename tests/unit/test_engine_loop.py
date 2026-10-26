@@ -24,10 +24,17 @@ def cfg(repo_root):
 
 
 def frontal_landmarks():
-    """106 landmarks of a frontal face big enough to pass S2."""
-    from tests.unit.test_pose import landmarks_from, project
+    """106 landmarks of a frontal face big enough to pass S2.
 
-    return landmarks_from(project((0.0, 0.0, 0.0), (0.0, 0.0, 1500.0), SHAPE))
+    The real fixture landmarks, moved to the middle of the frame: S5 gates on ratios
+    between all 106 points, so a face with only the six solvePnP points filled in would
+    be turned away there.
+    """
+    from tests.unit.test_pose import real_landmarks
+
+    landmarks, _shape = real_landmarks()
+    offset = np.array([SHAPE[1] / 2.0, SHAPE[0] / 2.0]) - landmarks.mean(axis=0)
+    return (landmarks + offset).astype(np.float32)
 
 
 def detection_from(landmarks, score=0.9):

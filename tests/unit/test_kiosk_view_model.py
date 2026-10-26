@@ -36,6 +36,8 @@ def test_idle():
     ("STEP_CLOSER", "Vui lòng đứng gần hơn"),
     ("MOVE_TO_CENTER", "Vui lòng đứng vào giữa khung"),
     ("LOOK_STRAIGHT", "Vui lòng nhìn thẳng vào camera"),
+    ("EYES_CLOSED", "Vui lòng mở mắt"),
+    ("MOUTH_OPEN", "Vui lòng khép miệng"),
     ("TOO_DARK", "Chỗ đứng quá tối, vui lòng nhích lên phía trước"),
 ])
 def test_every_guidance_code_has_an_instruction(code, expected):

@@ -111,6 +111,7 @@ ICONS = {
               ("line", 17, 9, 17, 12)],
     "dots": [("dot", 6, 12, 2), ("dot", 12, 12, 2), ("dot", 18, 12, 2)],
     "plus": [("line", 12, 5, 12, 19), ("line", 5, 12, 19, 12)],
+    "minus": [("line", 5, 12, 19, 12)],
 }
 
 # Names the pages use that are the same drawing as another icon.

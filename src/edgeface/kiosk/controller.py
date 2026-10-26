@@ -5,23 +5,32 @@ Imports no Qt on purpose. window.py asks this class what to draw and forwards ta
 into it, so the whole interaction can be driven from a test.
 """
 import os
+import time
 
+from edgeface import config as cfg_mod
 from edgeface.common.log import get_logger
 from edgeface.kiosk import view_model
 from edgeface.kiosk.auth import AdminAuth
 from edgeface.storage import (clock, faces, kiosk_ipc, operators, outbox, patients,
-                              templates)
+                              sessions, templates)
+from edgeface.storage import settings as admin_settings
 from edgeface.storage.db import get_meta, set_meta, transaction
 
 LOG = get_logger("kiosk")
 
 # Screens the kiosk opens by itself; the rest follow the engine's state.
 LOCAL_SCREENS = (view_model.SEARCH, view_model.PIN, view_model.ADMIN,
-                 view_model.PATIENTS, view_model.STATUS, view_model.CHANGE_PIN)
+                 view_model.PATIENTS, view_model.STATUS, view_model.CHANGE_PIN,
+                 view_model.SETTINGS)
 
 # The screens that sit behind the PIN. Leaving one of them locks the admin session.
 ADMIN_SCREENS = (view_model.ADMIN, view_model.PATIENTS, view_model.STATUS,
-                 view_model.CHANGE_PIN)
+                 view_model.CHANGE_PIN, view_model.SETTINGS)
+# The tabs that "Quay lại menu" leads out of, up to the admin menu.
+ADMIN_TABS = (view_model.PATIENTS, view_model.STATUS, view_model.CHANGE_PIN,
+              view_model.SETTINGS)
+# How many recent confirmed identifications the settings screen quotes as a reference.
+SETTINGS_RECENT_SESSIONS = 50
 
 
 class KioskController(object):
@@ -35,8 +44,9 @@ class KioskController(object):
         self.local_screen = None          # set while the nurse is in a kiosk-owned screen
         self.local_context = {}
         self.preview_path = (cfg.get("kiosk") or {}).get(
-            "preview_path", "/dev/shm/edgeface/preview.jpg")
+            "preview_path", "/dev/shm/edgeface/preview.rgb")
         self._preview_token = None
+        self._face_cache = None           # ((session_id, code), jpeg or None)
 
     # ------------------------------------------------------------------ polling
     def poll(self, now=None):
@@ -80,6 +90,8 @@ class KioskController(object):
             # would never lock. Only real taps and keystrokes call touch().
             if self.local_screen == view_model.CHANGE_PIN:
                 return self._change_pin_view()
+            if self.local_screen == view_model.SETTINGS:
+                return self._settings_view()
             return self._admin_view(now)
         patient = self._candidate_patient()
         show_score = (self.cfg.get("kiosk") or {}).get("show_score", True)
@@ -99,7 +111,7 @@ class KioskController(object):
         return patients.get_with_appointment(self.conn, candidate["code"])
 
     def preview_bytes(self):
-        """Latest preview JPEG, or None. Missing file is normal (engine may be idle)."""
+        """Latest preview frame (raw RGB or JPEG), or None. Missing is normal (engine idle)."""
         try:
             with open(self.preview_path, "rb") as f:
                 return f.read()
@@ -152,6 +164,15 @@ class KioskController(object):
         if button.kind == "change_pin":
             self.open_change_pin()
             return True
+        if button.kind == "settings":
+            self.open_settings()
+            return True
+        if button.kind == "settings_save":
+            self.save_settings(now)
+            return True
+        if button.kind == "settings_reset":
+            self.reset_settings(now)
+            return True
         if button.kind == "logout":
             # The rail's way out means out, from wherever it is tapped. "cancel" is the
             # back button, which inside the admin area means up to the menu.
@@ -167,8 +188,7 @@ class KioskController(object):
             return True
         if button.kind == "cancel":
             # Inside the admin area, Back means "up to the menu", not "log out".
-            if self.local_screen in (view_model.PATIENTS, view_model.STATUS,
-                                     view_model.CHANGE_PIN):
+            if self.local_screen in ADMIN_TABS:
                 self.open_admin_tab(view_model.ADMIN)
             else:
                 self.close_local()
@@ -201,6 +221,62 @@ class KioskController(object):
         self.local_screen = view_model.PIN
         self.local_context = {"operator_id": None, "pin": "", "error": None}
 
+    def needs_setup(self):
+        """True until the first operator exists: the PIN screen then creates one."""
+        return operators.count(self.conn) == 0
+
+    def submit_pin(self, pin, now=None):
+        """What the PIN screen sends. Unlocks, or - on a kiosk with no operator - sets up.
+
+        Returns True once the admin screen is open. Before this existed the window
+        logged a warning and dropped the PIN, so a fresh kiosk answered every tap with
+        silence and there was no way in short of running db_admin.py over SSH.
+        """
+        if self.needs_setup():
+            return self._submit_setup_pin(pin, now)
+        rows = self.auth.operators()
+        return self.unlock(rows[0]["operator_id"], pin, now) if rows else False
+
+    def _submit_setup_pin(self, pin, now=None):
+        from edgeface.kiosk import strings
+
+        context = dict(self.local_context or {})
+        step = context["step"] = context.get("step", "new")
+        context["setup_error"] = None
+
+        if step == "new":
+            if not operators.validate_pin_format(pin, self.auth.pin_length):
+                context["setup_error"] = strings.CHANGE_PIN_BAD_FORMAT.format(
+                    digits=self.auth.pin_length)
+            else:
+                context["new"], context["step"] = pin, "repeat"
+        elif pin != context.get("new"):
+            # Back to the start: we do not know which of the two was the typo.
+            context.update({"step": "new", "new": None,
+                            "setup_error": strings.CHANGE_PIN_MISMATCH})
+        else:
+            with transaction(self.conn):
+                # Checked again inside the transaction: db_admin.py may have created
+                # an operator since the screen was drawn, and two would make the
+                # "first operator" the one the nurse did not just choose.
+                operator_id = None
+                if operators.count(self.conn) == 0:
+                    operator_id = operators.create(
+                        self.conn, strings.SETUP_OPERATOR_NAME, pin,
+                        iterations=(self.cfg.get("auth") or {}).get(
+                            "pbkdf2_iterations", operators.DEFAULT_ITERATIONS),
+                        pin_length=self.auth.pin_length, at=now)
+            if operator_id is None:
+                self.open_pin()
+                return False
+            LOG.info("operator %s created from the kiosk", operator_id)
+            ok = self.unlock(operator_id, pin, now)
+            if ok:
+                self.local_context = {"notice": strings.SETUP_PIN_SAVED}
+            return ok
+        self.local_context = context
+        return False
+
     def unlock(self, operator_id, pin, now=None):
         ok, reason, left = self.auth.unlock(operator_id, pin, now)
         if ok:
@@ -225,6 +301,150 @@ class KioskController(object):
             raise ValueError("not an admin tab: {}".format(screen))
         self.local_screen = screen
         self.local_context = {}
+
+    # ------------------------------------------------------------------ match settings
+    def open_settings(self):
+        """The settings tab, with a draft holding the values the engine uses now."""
+        self.local_screen = view_model.SETTINGS
+        self.local_context = {"draft": self._saved_settings()}
+
+    def _saved_settings(self):
+        return dict((key, admin_settings.describe(self.conn, self.cfg, key)["value"])
+                    for key in admin_settings.editable_keys(self.cfg))
+
+    def adjust_setting(self, key, direction, now=None):
+        """One step up (+1) or down (-1) on the draft, kept inside admin_settings.
+
+        Below the minimum of a key that may be empty comes "Không xét"; one step up
+        from there comes back to the minimum.
+        """
+        self.touch(now)
+        spec = cfg_mod.admin_range(self.cfg, key)
+        if spec is None or self.local_screen != view_model.SETTINGS:
+            return None
+        context = dict(self.local_context or {})
+        draft = dict(context.get("draft") or self._saved_settings())
+        value = draft.get(key)
+        if value is None:
+            value = spec["min"] if direction > 0 else None
+        else:
+            steps = int(round((float(value) - spec["min"]) / spec["step"]))
+            steps += 1 if direction > 0 else -1
+            if steps < 0:
+                value = None if spec["nullable"] else spec["min"]
+            else:
+                value = min(spec["max"], spec["min"] + steps * spec["step"])
+        draft[key] = None if value is None else round(value, 4)
+        context.update(draft=draft, notice=None, error=None)
+        self.local_context = context
+        return draft[key]
+
+    def save_settings(self, now=None):
+        """Write every value the draft changed, as the nurse who unlocked the screen."""
+        now = clock.now() if now is None else now
+        from edgeface.kiosk import strings
+
+        context = dict(self.local_context or {})
+        draft = context.get("draft") or {}
+        saved = self._saved_settings()
+        changed = [key for key in sorted(draft) if draft[key] != saved.get(key)]
+        try:
+            for key in changed:
+                admin_settings.set_value(self.conn, self.cfg, key, draft[key],
+                                         operator_id=self.auth.operator_id, now=now)
+        except ValueError as exc:
+            context.update(error=strings.SETTINGS_ERROR.format(error=exc), notice=None)
+            self.local_context = context
+            return False
+        if changed:
+            LOG.info("match settings changed by operator %s: %s", self.auth.operator_id,
+                     dict((key, draft[key]) for key in changed))
+        context.update(draft=self._saved_settings(), error=None,
+                       notice=strings.SETTINGS_SAVED if changed else strings.SETTINGS_NOTHING)
+        self.local_context = context
+        return bool(changed)
+
+    def reset_settings(self, now=None):
+        now = clock.now() if now is None else now
+        from edgeface.kiosk import strings
+
+        for key in admin_settings.editable_keys(self.cfg):
+            admin_settings.reset(self.conn, self.cfg, key,
+                                 operator_id=self.auth.operator_id, now=now)
+        self.local_context = {"draft": self._saved_settings(),
+                              "notice": strings.SETTINGS_RESET_DONE}
+
+    @staticmethod
+    def format_setting(value):
+        from edgeface.kiosk import strings
+
+        return strings.SETTINGS_NONE if value is None else "{:.2f}".format(value)
+
+    def recent_confirmed_scores(self):
+        """Top-1 scores of recent identifications the nurse confirmed as that patient."""
+        rows = sessions.recent(self.conn, SETTINGS_RECENT_SESSIONS, kind="identify")
+        return [float(row["top1_score"]) for row in rows
+                if row.get("top1_score") is not None and row.get("top1_code")
+                and row.get("nurse_action") == "confirm"
+                and row.get("confirmed_code") == row.get("top1_code")]
+
+    def settings_rows(self):
+        """One dict per editable key, for the settings cards."""
+        from edgeface.kiosk import strings
+
+        draft = (self.local_context or {}).get("draft") or self._saved_settings()
+        match_cfg = self.cfg["match"]
+        rows = []
+        for key in admin_settings.editable_keys(self.cfg):
+            spec = cfg_mod.admin_range(self.cfg, key)
+            info = admin_settings.describe(self.conn, self.cfg, key)
+            value = draft.get(key, info["value"])
+            if value != info["value"]:
+                source = strings.SETTINGS_SOURCE_DRAFT.format(
+                    value=self.format_setting(info["value"]))
+            elif info["saved"]:
+                row = operators.get(self.conn, info["operator_id"]) if info["operator_id"] else None
+                source = strings.SETTINGS_SOURCE_SAVED.format(
+                    time=time.strftime("%H:%M %d/%m", time.localtime(info["updated_at"] or 0)),
+                    who=(row or {}).get("display_name") or "?")
+            else:
+                source = strings.SETTINGS_SOURCE_DEFAULT
+            at_bottom = value is None or (not spec["nullable"]
+                                          and value <= spec["min"] + 1e-9)
+            rows.append({
+                "key": key,
+                "label": strings.SETTINGS_LABELS.get(key, key),
+                "help": strings.SETTINGS_HELP.get(key, "").format(
+                    votes=match_cfg.get("vote_k"), n=match_cfg.get("vote_n")),
+                "value": self.format_setting(value),
+                "source": source,
+                "changed": value != info["value"],
+                "can_dec": not at_bottom,
+                "can_inc": value is None or value < spec["max"] - 1e-9,
+            })
+        return rows
+
+    def _settings_view(self):
+        from edgeface.kiosk import strings
+
+        context = self.local_context or {}
+        if context.get("error"):
+            message, severity = context["error"], view_model.ATTENTION
+        elif context.get("notice"):
+            message, severity = context["notice"], view_model.OK
+        else:
+            scores = self.recent_confirmed_scores()
+            reference = (strings.SETTINGS_RECENT.format(n=len(scores), low=min(scores),
+                                                        high=max(scores))
+                         if scores else strings.SETTINGS_RECENT_NONE)
+            message, severity = u"{} {}".format(strings.SETTINGS_HINT, reference), view_model.OK
+        return view_model.View(
+            screen=view_model.SETTINGS, title=strings.SETTINGS_TITLE,
+            message=message, severity=severity,
+            buttons=(view_model.Button("cancel", strings.BTN_BACK_TO_MENU, None),
+                     view_model.Button("settings_reset", strings.BTN_SETTINGS_RESET, None),
+                     view_model.Button("settings_save", strings.BTN_SETTINGS_SAVE, None,
+                                       True)))
 
     def open_change_pin(self):
         self.local_screen = view_model.CHANGE_PIN
@@ -316,6 +536,24 @@ class KioskController(object):
         self.local_context = {"notice": strings.REVOKE_DONE.format(code=code)}
         return True
 
+    def candidate_face(self):
+        """The enrolment picture of the current candidate, or None.
+
+        None is normal: a patient pulled from the server has no picture, and the card
+        falls back to initials. The picture is read from the database here, in the kiosk
+        process, so it never travels through kiosk_state. It is cached per session
+        because refresh() asks ten times a second and the answer does not change
+        while the nurse is looking at it.
+        """
+        payload = (self.state or {}).get("payload") or {}
+        code = (payload.get("candidate") or {}).get("code")
+        if not code:
+            return None
+        key = ((self.state or {}).get("session_id"), code)
+        if self._face_cache is None or self._face_cache[0] != key:
+            self._face_cache = (key, faces.get(self.conn, code))
+        return self._face_cache[1]
+
     def duplicate_faces(self):
         """Pictures for the duplicate warning, in the engine's order, None where missing.
 
@@ -344,6 +582,7 @@ class KioskController(object):
 
         now = clock.now() if now is None else now
         rows = self.today_patients(now)
+        saved = self._saved_settings()
         from_kiosk = len([r for r in rows if r["source"] == patients.SOURCE_KIOSK])
         pending = outbox.pending_count(self.conn)
         engine_state = (self.state or {}).get("state", "?")
@@ -358,6 +597,9 @@ class KioskController(object):
                 strings.ENGINE_IS.format(state=engine_state),
                 strings.OUTBOX_PENDING.format(n=pending)),
             "change_pin": self._pin_age(now),
+            "settings": strings.SETTINGS_CARD_HINT.format(
+                threshold=self.format_setting(saved.get("match.threshold")),
+                margin=self.format_setting(saved.get("match.margin_top1_top2"))),
         }
 
     def _pin_age(self, now):
@@ -401,6 +643,16 @@ class KioskController(object):
         from edgeface.kiosk import strings
 
         context = self.local_context or {}
+        if self.needs_setup():
+            repeating = context.get("step") == "repeat"
+            error = context.get("setup_error")
+            prompt = (strings.SETUP_PIN_REPEAT if repeating else
+                      strings.SETUP_PIN_NEW.format(digits=self.auth.pin_length))
+            return view_model.View(
+                screen=view_model.PIN, title=strings.SETUP_PIN_TITLE,
+                message=error or prompt,
+                severity=view_model.ATTENTION if error else view_model.OK,
+                buttons=(view_model.Button("cancel", strings.BTN_CANCEL, None),))
         message = strings.PIN_HINT.format(digits=self.auth.pin_length)
         severity = view_model.OK
         error = context.get("error")
@@ -476,6 +728,7 @@ class KioskController(object):
                 view_model.Button("patients", strings.BTN_MENU_PATIENTS, None),
                 view_model.Button("status", strings.BTN_MENU_STATUS, None),
                 view_model.Button("change_pin", strings.BTN_CHANGE_PIN, None),
+                view_model.Button("settings", strings.BTN_MENU_SETTINGS, None),
                 view_model.Button("cancel", strings.BTN_LOGOUT, None),
             ))
 

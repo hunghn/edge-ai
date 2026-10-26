@@ -121,6 +121,9 @@ HANDLERS = {
     "spoof.detected": lambda s, d, e, p: _apply_spoof(s, d, e, p),
     "patient.revoked_local": lambda s, d, e, p: _apply_revoked_local(s, d, p),
     "device.heartbeat": lambda s, d, e, p: None,
+    # A nurse changed a match threshold on the kiosk. Nothing to apply here: storing the
+    # event row is the point, as the audit trail of who changed what and when.
+    "settings.changed": lambda s, d, e, p: None,
 }
 
 

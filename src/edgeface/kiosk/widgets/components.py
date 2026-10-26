@@ -137,18 +137,60 @@ def initials(full_name):
 
 
 class Avatar(QtWidgets.QLabel):
-    """Initials in a circle. The gallery holds no portraits, so initials are what we have."""
+    """A patient's face in a circle when the kiosk has one, their initials when it has not.
+
+    The gallery holds no portraits. The only picture is the 112x112 crop taken when the
+    patient was enrolled on this kiosk (storage/faces.py); one pulled from the server has
+    none, and initials are what is left.
+    """
 
     def __init__(self, text="", primary=False, size=56, parent=None):
         super(Avatar, self).__init__(parent)
         self.setObjectName("avatarPrimary" if primary else "avatar")
         self.setFixedSize(size, size)
         self.setAlignment(QtCore.Qt.AlignCenter)
+        self._size = size
+        self._name = ""
+        self._photo = None
+        if size != 56:
+            # The stylesheet's radius and type size are for the 56 px one.
+            self.setStyleSheet("border-radius: %dpx; font-size: %dpx;"
+                               % (size // 2, max(20, int(size * 0.36))))
         self.set_name(text)
 
     def set_name(self, full_name):
-        if self.text() != initials(full_name):
+        self._name = full_name
+        if self._photo is None and self.text() != initials(full_name):
             self.setText(initials(full_name))
+
+    def set_photo(self, jpeg):
+        """JPEG bytes, or None to go back to initials. Cheap to call on every redraw."""
+        if jpeg == self._photo:
+            return
+        pixmap = QtGui.QPixmap()
+        if jpeg and pixmap.loadFromData(jpeg):
+            self._photo = jpeg
+            self.setPixmap(self._round(pixmap))
+            return
+        self._photo = None
+        self.clear()
+        self.setText(initials(self._name))
+
+    def _round(self, pixmap):
+        side = self._size
+        pixmap = pixmap.scaled(side, side, QtCore.Qt.KeepAspectRatioByExpanding,
+                               QtCore.Qt.SmoothTransformation)
+        out = QtGui.QPixmap(side, side)
+        out.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(out)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        clip = QtGui.QPainterPath()
+        clip.addEllipse(0, 0, side, side)
+        painter.setClipPath(clip)
+        painter.drawPixmap((side - pixmap.width()) // 2, (side - pixmap.height()) // 2,
+                           pixmap)
+        painter.end()
+        return out
 
 
 class IconButton(QtWidgets.QPushButton):

@@ -30,6 +30,8 @@ GUIDANCE = {
     "STEP_CLOSER": "Vui lòng đứng gần hơn",
     "MOVE_TO_CENTER": "Vui lòng đứng vào giữa khung",
     "LOOK_STRAIGHT": "Vui lòng nhìn thẳng vào camera",
+    "EYES_CLOSED": "Vui lòng mở mắt",
+    "MOUTH_OPEN": "Vui lòng khép miệng",
     "HOLD_STILL": "Vui lòng giữ yên",
     "TOO_DARK": "Chỗ đứng quá tối, vui lòng nhích lên phía trước",
     "TOO_BRIGHT": "Ánh sáng quá chói, vui lòng nhích sang một bên",
@@ -99,6 +101,14 @@ LABEL_MARGIN = "Cách BN thứ hai"
 PIN_HINT = "Nhập mã PIN {digits} chữ số"
 PIN_WRONG = "Mã PIN không đúng. Còn {left} lần thử."
 PIN_LOCKED = "Đã khoá. Vui lòng thử lại sau {seconds} giây."
+# First run: the kiosk has no operator yet, so the PIN screen creates one. Two steps for
+# the same reason as changing the PIN - a typo would lock the nurse out of the admin
+# screen, and the only way back in from the kiosk is this same screen.
+SETUP_PIN_TITLE = "Tạo mã PIN quản trị"
+SETUP_PIN_NEW = "Chưa có mã PIN. Tạo mã PIN {digits} chữ số cho điều dưỡng."
+SETUP_PIN_REPEAT = "Nhập lại mã PIN vừa tạo"
+SETUP_PIN_SAVED = "Đã tạo mã PIN. Lần sau nhập mã này để vào quản trị."
+SETUP_OPERATOR_NAME = "Điều dưỡng"
 ADMIN_LOCKED_HINT = "Màn hình quản trị tự khoá sau {seconds} giây không thao tác."
 
 # Changing the PIN. Three steps, because a typo in step two would lock the nurse out of
@@ -299,3 +309,33 @@ ENGINE_IS = "Engine {state}"
 OUTBOX_PENDING = "{n} sự kiện chờ gửi"
 BOARD_NAME = "Jetson Nano 4GB"
 DUPLICATE_NEW_TAG = "hồ sơ mới"
+
+# Admin screen: the match settings (storage/settings.py). The card shows the number the
+# engine uses right now; the explanation says what it changes, in the nurse's words.
+BTN_MENU_SETTINGS = "Cài đặt nhận diện"
+SETTINGS_TITLE = "Cài đặt nhận diện"
+BTN_SETTINGS_SAVE = "Lưu"
+BTN_SETTINGS_RESET = "Khôi phục mặc định"
+SETTINGS_LABELS = {
+    "match.threshold": "Ngưỡng chắc chắn",
+    "match.margin_top1_top2": "Cách biệt với người thứ 2",
+}
+SETTINGS_HELP = {
+    "match.threshold": "Điểm khớp từ mức này trở lên (và ít nhất {votes}/{n} ảnh cùng "
+                       "chọn một người) thì hiện \"Khớp cao\".",
+    "match.margin_top1_top2": "Người đứng đầu phải hơn người thứ 2 ít nhất chừng này "
+                              "điểm. \"Không xét\" thì bỏ qua điều kiện này.",
+}
+SETTINGS_HINT = ("Y tá vẫn luôn phải bấm xác nhận, kể cả khi hiện \"Khớp cao\". "
+                 "Thay đổi áp dụng từ người tiếp theo.")
+SETTINGS_NONE = "Không xét"
+SETTINGS_SOURCE_DEFAULT = "Mặc định của hệ thống"
+SETTINGS_SOURCE_SAVED = "Đã chỉnh lúc {time} bởi {who}"
+SETTINGS_SOURCE_DRAFT = "Chưa lưu (đang dùng {value})"
+SETTINGS_SAVED = "Đã lưu. Áp dụng từ người tiếp theo."
+SETTINGS_RESET_DONE = "Đã khôi phục giá trị mặc định."
+SETTINGS_NOTHING = "Không có thay đổi nào để lưu."
+SETTINGS_ERROR = "Không lưu được: {error}"
+SETTINGS_RECENT = "Tham khảo: {n} lần y tá xác nhận đúng gần đây có điểm {low:.2f} – {high:.2f}."
+SETTINGS_RECENT_NONE = "Chưa có lần xác nhận đúng nào để tham khảo."
+SETTINGS_CARD_HINT = "Ngưỡng {threshold} · Cách biệt {margin}"

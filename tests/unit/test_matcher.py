@@ -109,8 +109,9 @@ def test_template_aggregation_max_vs_mean(conn, cfg):
 def test_passed_threshold_is_none_until_calibrated(conn, cfg):
     enroll(conn, "BN001", [unit(1)])
     probes = [emb(noisy(unit(1), 0.1, s), s) for s in range(5)]
-    assert cfg["match"]["threshold"] is None
-    assert matcher.match(probes, loaded_gallery(conn), cfg).passed_threshold is None
+    unset = dict(cfg)
+    unset["match"] = dict(cfg["match"], threshold=None)
+    assert matcher.match(probes, loaded_gallery(conn), unset).passed_threshold is None
 
     calibrated = dict(cfg)
     calibrated["match"] = dict(cfg["match"], threshold=0.3, margin_top1_top2=0.0)
@@ -208,3 +209,29 @@ def test_a_negative_similarity_is_still_a_patient(conn, cfg):
     found = matcher.top_matches_for([base], loaded_gallery(conn), cfg, limit=3)
     assert [code for code, _score in found] == ["BN001"]
     assert found[0][1] == pytest.approx(-1.0, abs=1e-5)
+
+
+def test_a_null_margin_means_no_margin_check(conn, cfg):
+    """D-02: with margin_top1_top2 null the threshold alone decides, not 'undecided'."""
+    enroll(conn, "BN001", [unit(1)])
+    enroll(conn, "BN002", [noisy(unit(1), 0.05, 99)])      # a near look-alike
+    probes = [emb(noisy(unit(1), 0.05, s), s) for s in range(5)]
+    loose = dict(cfg)
+    loose["match"] = dict(cfg["match"], threshold=0.3, margin_top1_top2=None)
+    result = matcher.match(probes, loaded_gallery(conn), loose)
+    assert result.margin is not None and result.margin < 0.2
+    assert result.passed_threshold is True
+
+    strict = dict(cfg)
+    strict["match"] = dict(cfg["match"], threshold=0.3, margin_top1_top2=0.2)
+    assert matcher.match(probes, loaded_gallery(conn), strict).passed_threshold is False
+
+
+def test_a_gallery_of_one_passes_on_the_threshold_even_with_a_margin(conn, cfg):
+    """Nobody to be confused with: margin is None and must not block."""
+    enroll(conn, "BN001", [unit(1)])
+    probes = [emb(noisy(unit(1), 0.1, s), s) for s in range(5)]
+    strict = dict(cfg)
+    strict["match"] = dict(cfg["match"], threshold=0.3, margin_top1_top2=0.2)
+    result = matcher.match(probes, loaded_gallery(conn), strict)
+    assert result.margin is None and result.passed_threshold is True

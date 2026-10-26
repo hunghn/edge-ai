@@ -16,10 +16,10 @@ def cfg(repo_root):
 
 @pytest.fixture
 def calibrated(cfg):
-    """A config as it will look once M9 closes D-01/D-02.
+    """A config with D-01/D-02 set and no_match_below as M9 may set it.
 
-    enabled_outcomes stays at the three values the spec names: until D-04 adds the
-    others to the Decision enum, config.validate() refuses to enable them.
+    enabled_outcomes is the default one: candidate_suggested is on (D-04, 2026-10-08),
+    no_match is not in the Decision enum yet.
     """
     merged = dict(cfg)
     merged["match"] = dict(cfg["match"], threshold=0.45, margin_top1_top2=0.05)
@@ -75,7 +75,8 @@ def test_r4_no_match(calibrated):
 
 def test_r5_confident_candidate(calibrated):
     out = decide(ready(result(passed=True)), calibrated)
-    assert out.rule_id == "R5" and out.decision is Decision.REVIEW_REQUIRED
+    assert out.rule_id == "R5" and out.decision is Decision.CANDIDATE_SUGGESTED
+    assert out.requires_nurse is True            # "Khớp cao" still waits for the nurse
     assert out.candidate["votes"] == 5           # the candidate is shown either way
 
 
@@ -87,11 +88,24 @@ def test_r6_below_threshold(calibrated):
 def test_config_refuses_outcomes_the_code_cannot_express(tmp_path, repo_root):
     """Enabling a D-04 outcome before the enum knows it must fail loudly, not silently."""
     bad = tmp_path / "bad.yaml"
-    bad.write_text("decision:\n  enabled_outcomes: [review_required, candidate_suggested]\n")
+    bad.write_text("decision:\n  enabled_outcomes: [review_required, no_match]\n")
     with pytest.raises(ValueError) as excinfo:
         cfg_mod.load_config(str(bad), default_path=os.path.join(
             repo_root, "configs", "default.yaml"))
-    assert "candidate_suggested" in str(excinfo.value)
+    assert "no_match" in str(excinfo.value)
+
+
+def test_r5_falls_back_to_review_when_the_outcome_is_switched_off(calibrated):
+    """A clinic can switch "Khớp cao" off in the config; R5 then reads as a review."""
+    merged = dict(calibrated)
+    merged["decision"] = dict(calibrated["decision"], enabled_outcomes=("review_required",))
+    out = decide(ready(result(passed=True)), merged)
+    assert out.rule_id == "R5" and out.decision is Decision.REVIEW_REQUIRED
+
+
+def test_r6_below_the_threshold_is_a_review(calibrated):
+    out = decide(ready(result(score=0.40, passed=False)), calibrated)
+    assert out.rule_id == "R6" and out.decision is Decision.REVIEW_REQUIRED
 
 
 def test_every_decision_requires_the_nurse(calibrated, cfg):

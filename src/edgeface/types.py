@@ -18,11 +18,12 @@ Embedding.__new__.__defaults__ = (None, None)
 
 
 class Decision(enum.Enum):
-    # Only the outcomes named in the spec. The remaining values depend on the
-    # §6.3 rule engine, which has not been decided yet.
+    # The outcomes named in the spec, plus candidate_suggested (D-04, 2026-10-08). The
+    # rest of the §6.3 rule engine (no_match) has not been decided yet.
     SPOOF_SUSPECT = "spoof_suspect"
     LOW_QUALITY = "low_quality"
     REVIEW_REQUIRED = "review_required"
+    CANDIDATE_SUGGESTED = "candidate_suggested"
 
 
 class GuidanceCode(object):
@@ -31,6 +32,8 @@ class GuidanceCode(object):
     STEP_CLOSER = "STEP_CLOSER"
     MOVE_TO_CENTER = "MOVE_TO_CENTER"
     LOOK_STRAIGHT = "LOOK_STRAIGHT"
+    EYES_CLOSED = "EYES_CLOSED"
+    MOUTH_OPEN = "MOUTH_OPEN"
     HOLD_STILL = "HOLD_STILL"
     TOO_DARK = "TOO_DARK"
     TOO_BRIGHT = "TOO_BRIGHT"

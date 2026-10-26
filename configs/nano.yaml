@@ -24,3 +24,8 @@ capture:
 storage:
   db_path: /var/lib/edgeface/edge.db
   evidence_dir: /var/lib/edgeface/evidence
+
+kiosk:
+  # Hiện con trỏ để điều khiển kiosk bằng chuột (mặc định ẩn vì màn hình cảm ứng).
+  # Bàn phím vật lý gõ được vào các ô nhập; bàn phím ảo vẫn hiện và bấm được bằng chuột.
+  hide_cursor: false

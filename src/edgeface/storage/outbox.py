@@ -13,7 +13,7 @@ from edgeface.storage.db import read_all, read_one
 
 # Event types the server understands (see docs/plans/M7_server_sync.md).
 TYPES = ("enrollment.created", "session.closed", "spoof.detected", "patient.revoked_local",
-         "device.heartbeat")
+         "device.heartbeat", "settings.changed")
 
 PAYLOAD_SCHEMA = 1
 

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from edgeface import config as cfg_mod
+from edgeface.pipeline import landmark_index as li
 from edgeface.pipeline import pose
 from edgeface.pipeline.landmark_index import POSE_POINTS_2D
 from edgeface.types import Detection, GuidanceCode
@@ -15,6 +16,12 @@ IMAGE_SHAPE = (720, 1280, 3)
 def cfg(repo_root):
     import os
     return cfg_mod.load_config(os.path.join(repo_root, "configs", "dev.yaml"))
+
+
+def with_pose(cfg, **overrides):
+    merged = dict(cfg)
+    merged["pose_fine"] = dict(cfg["pose_fine"], **overrides)
+    return merged
 
 
 def project(rotation_deg=(0.0, 0.0, 0.0), translation=(0.0, 0.0, 1500.0),
@@ -90,11 +97,92 @@ def test_solve_head_pose_beats_plain_iterative_on_real_landmarks():
     assert abs(angles["roll"]) < 10.0 and abs(angles["yaw"]) < 10.0
 
 
-def test_fine_pose_gate(cfg):
+def test_fine_pose_pnp_gate(cfg):
+    cfg = with_pose(cfg, method="pnp")
     assert pose.fine_pose(landmarks_from(project((5, 5, 3))), IMAGE_SHAPE, cfg).ok
     for angles in ((20, 0, 0), (0, 20, 0), (0, 0, 15)):
         result = pose.fine_pose(landmarks_from(project(angles)), IMAGE_SHAPE, cfg)
         assert not result.ok and result.reason == GuidanceCode.LOOK_STRAIGHT
+
+
+# ---------------------------------------------------------------- S5, ratio gate (D-10)
+def real_landmarks():
+    """The 106 landmarks of the frontal fixture portrait, as 2d106det produced them."""
+    import os
+
+    goldens = np.load(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "fixtures", "goldens.npz"))
+    return goldens["square/lmk106"].astype(np.float64), (512, 512, 3)
+
+
+def test_default_s5_gate_is_the_ratio_gate(cfg):
+    assert cfg["pose_fine"]["method"] == "ratio"
+
+
+def test_face_ratios_of_a_frontal_face_sit_where_ims_id_server_measured_them():
+    ratios = pose.face_ratios(real_landmarks()[0])
+    assert 0.40 < ratios["ud"] < 0.65
+    assert 0.80 < ratios["rl"] < 1.25
+    assert ratios["eye"] > 0.15
+    assert ratios["mouth"] < 0.20
+
+
+def test_frontal_face_passes_the_ratio_gate_even_though_pnp_would_reject_it(cfg):
+    """The regression this gate exists for: solvePnP puts a frontal face at ~-20 deg."""
+    landmarks, shape = real_landmarks()
+    result = pose.fine_pose(landmarks, shape, cfg)
+    assert result.ok, result
+    for key in ("ud", "rl", "eye", "mouth", "yaw", "pitch", "roll"):
+        assert key in result.data
+
+
+@pytest.mark.parametrize("shift", [(0.0, -0.45), (0.0, 0.45), (0.6, 0.0), (-0.6, 0.0)])
+def test_moving_the_nose_tip_fails_the_ratio_gate(cfg, shift):
+    """Up/down moves ud past its limits, sideways moves rl past its limits."""
+    landmarks, shape = real_landmarks()
+    nose, chin = landmarks[li.NOSE_TIP], landmarks[li.CHIN]
+    scale = float(np.linalg.norm(chin - nose))
+    landmarks[li.NOSE_TIP] = nose + np.asarray(shift) * scale
+    result = pose.fine_pose(landmarks, shape, cfg)
+    assert not result.ok and result.reason == GuidanceCode.LOOK_STRAIGHT
+
+
+def test_a_rolled_head_fails_the_ratio_gate(cfg):
+    landmarks, shape = real_landmarks()
+    center = landmarks.mean(axis=0)
+    rolled = pose._rotate(landmarks, np.deg2rad(15.0), center)
+    assert abs(pose.roll_from_landmarks(rolled)) > cfg["pose_fine"]["roll_max_deg"]
+    result = pose.fine_pose(rolled, shape, cfg)
+    assert not result.ok and result.reason == GuidanceCode.LOOK_STRAIGHT
+
+
+def test_closed_eyes_are_turned_away(cfg):
+    landmarks, shape = real_landmarks()
+    for upper, lower in li.LEFT_EYE_LIDS + li.RIGHT_EYE_LIDS:
+        landmarks[upper] = landmarks[lower]
+    result = pose.fine_pose(landmarks, shape, cfg)
+    assert not result.ok and result.reason == GuidanceCode.EYES_CLOSED
+
+
+def test_an_open_mouth_is_turned_away(cfg):
+    landmarks, shape = real_landmarks()
+    width = float(np.linalg.norm(landmarks[li.MOUTH_INNER_CORNERS[0]]
+                                 - landmarks[li.MOUTH_INNER_CORNERS[1]]))
+    for upper, lower in li.MOUTH_LIPS:
+        landmarks[lower] = landmarks[upper] + np.array([0.0, 0.5 * width])
+    result = pose.fine_pose(landmarks, shape, cfg)
+    assert not result.ok and result.reason == GuidanceCode.MOUTH_OPEN
+
+
+def test_ratio_gate_thresholds_come_from_the_config(cfg):
+    landmarks, shape = real_landmarks()
+    strict = with_pose(cfg, eye_closed_max=0.99)
+    assert pose.fine_pose(landmarks, shape, strict).reason == GuidanceCode.EYES_CLOSED
+
+
+def test_degenerate_landmarks_fail_the_ratio_gate(cfg):
+    result = pose.fine_pose(np.zeros((106, 2)), (512, 512, 3), cfg)
+    assert not result.ok and result.reason == GuidanceCode.LOOK_STRAIGHT
 
 
 def test_normalize_angle_folds_near_180():

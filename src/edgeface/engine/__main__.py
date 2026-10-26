@@ -35,6 +35,7 @@ from edgeface.pipeline import matcher
 from edgeface.pipeline.capture import CaptureThread, lockstep_from_config, source_from_config
 from edgeface.pipeline.decision import SessionEvidence, decide
 from edgeface.storage import clock, db, evidence, faces, metrics, outbox, sessions
+from edgeface.storage import settings as admin_settings
 
 LOG = get_logger("engine")
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -213,13 +214,22 @@ class Engine(object):
         self.session.decision = None
         self.session.session_id = None
 
+    def _decision_cfg(self):
+        """The config with whatever the nurse saved on the admin screen applied.
+
+        Read at every decision, not at start-up: a threshold changed on the kiosk takes
+        effect from the next person, without restarting the engine.
+        """
+        return admin_settings.effective(self.cfg, self.conn)
+
     def _run_decision(self, payload, now):
         status = payload["collector"]
+        cfg = self._decision_cfg()
         embeddings = self.collector.embeddings() if status == bf.READY else []
-        match = matcher.match(embeddings, self.gallery, self.cfg) if embeddings else None
+        match = matcher.match(embeddings, self.gallery, cfg) if embeddings else None
         result = decide(SessionEvidence(
             spoof_frames=self.session.spoof_frames, min_p_real=self.session.min_p_real,
-            collector=status, n_good_frames=self.collector.n_good, match=match), self.cfg)
+            collector=status, n_good_frames=self.collector.n_good, match=match), cfg)
         self.session.n_good_frames = self.collector.n_good
         self._execute(self.session.on_decision(result, now), now)
 
@@ -282,7 +292,7 @@ class Engine(object):
         embeddings = self.collector.embeddings()
         if payload["stage"] == "review":
             review = enroll_mod.review(self.session.enroll_form, embeddings,
-                                       self.gallery, self.cfg)
+                                       self.gallery, self._decision_cfg())
             self.publisher.publish(session_mod.ENROLL_REVIEW, None, self.session.session_id, {
                 "n_templates": review.n_templates, "warnings": review.warnings,
                 "duplicate_code": review.duplicate_code,
@@ -360,8 +370,13 @@ class Engine(object):
             outcome = engine_loop.process_frame(frame, self.models, self.cfg, self.collector)
             if outcome.guidance == "SPOOF_SUSPECT" and outcome.obs.det is not None:
                 worst = self.worst_spoof_frame
+                # min_p_real is None until the session has counted its first spoof frame,
+                # which happens below in on_frame(); worst_spoof_frame may be left over
+                # from the previous session, so the comparison cannot assume a number.
                 if worst is None or (outcome.obs.spoof is not None
-                                     and outcome.obs.spoof.p_real < self.session.min_p_real):
+                                     and (self.session.min_p_real is None
+                                          or outcome.obs.spoof.p_real
+                                          < self.session.min_p_real)):
                     self.worst_spoof_frame = (frame, outcome.obs.det)
             self._remember_box(outcome.obs.det, frame.image.shape,
                                good=outcome.guidance is None)
@@ -387,6 +402,7 @@ class Engine(object):
 
     def run(self, max_frames=0):
         self.capture.start()
+        self.publisher.start_preview_thread()
         self.running = True
         self.publisher.publish(session_mod.IDLE, None, None, None, force=True)
         frames = 0
@@ -414,6 +430,7 @@ class Engine(object):
         if self.session.session_id is not None:
             self._close_session({"nurse_action": "cancel"}, now)
         self.capture.stop()
+        self.publisher.stop_preview_thread()
         if self._device is not None and self._device.available:
             self._device.stop()
         close_models(self.models)

@@ -5,9 +5,9 @@ number comes from the config, and each rule has an id that is written to the ses
 so M9 can count how often each fired.
 
 The spec names three outcomes (spoof_suspect, low_quality, review_required) and defers
-the rest to §6.3. Until D-04 is decided, only those three can be produced: anything that
-would have been "suggest this candidate" or "not in today's list" becomes
-review_required, which is the safe direction — the nurse looks at it either way.
+the rest to §6.3. candidate_suggested was enabled on 2026-10-08 (D-04); an outcome the
+config does not enable, such as "not in today's list", becomes review_required, which is
+the safe direction — the nurse looks at it either way.
 
 Whatever the outcome, requires_nurse is always True: the kiosk never admits anyone.
 """
@@ -32,7 +32,7 @@ DecisionResult = namedtuple("DecisionResult", [
     "decision", "rule_id", "candidate", "requires_nurse", "note",
 ])
 
-CANDIDATE_SUGGESTED = "candidate_suggested"   # proposed in D-04, not enabled yet
+CANDIDATE_SUGGESTED = Decision.CANDIDATE_SUGGESTED.value   # D-04, enabled 2026-10-08
 NO_MATCH = "no_match"                         # proposed in D-04, not enabled yet
 
 _warned = set()
@@ -90,8 +90,9 @@ def decide(evidence, cfg):
 
     # R3 — thresholds not calibrated yet: show the best guess, let the nurse judge.
     if match is None or match.passed_threshold is None:
-        _warn_once("thresholds", "match.threshold / margin are null (D-01, D-02): "
-                                 "every session goes to review_required")
+        if cfg["match"].get("threshold") is None:
+            _warn_once("thresholds", "match.threshold is null (D-01): "
+                                     "every session goes to review_required")
         return _resolve(Decision.REVIEW_REQUIRED.value, cfg, "R3", match,
                         note="thresholds not calibrated")
 

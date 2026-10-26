@@ -20,6 +20,7 @@ ENROLL = "enroll"
 PATIENTS = "patients"
 STATUS = "status"
 CHANGE_PIN = "change_pin"
+SETTINGS = "settings"
 DUPLICATE = "duplicate"
 ERROR = "error"
 
@@ -62,7 +63,7 @@ TODO = "todo"
 STEP_OF_GUIDANCE = {
     "NO_FACE": 0, "INVALID_BBOX": 0,
     "MOVE_TO_CENTER": 1, "STEP_CLOSER": 1,
-    "LOOK_STRAIGHT": 2,
+    "LOOK_STRAIGHT": 2, "EYES_CLOSED": 2, "MOUTH_OPEN": 2,
     "SPOOF_SUSPECT": 3, "TOO_DARK": 3, "TOO_BRIGHT": 3, "HOLD_STILL": 3,
     "EMBED_INVALID": 4,
 }

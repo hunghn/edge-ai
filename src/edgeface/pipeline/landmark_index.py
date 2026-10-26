@@ -32,6 +32,18 @@ MOUTH_RIGHT = 61
 # The six points used for solvePnP in S5, in the order of POSE_MODEL_3D (pose.py).
 POSE_POINTS_2D = (NOSE_TIP, CHIN, LEFT_EYE_OUTER, RIGHT_EYE_OUTER, MOUTH_LEFT, MOUTH_RIGHT)
 
+# The points ims_id_server tools/tools.py::face_analysis measures its ratios between
+# (pose.face_ratios). Its own names are kept in the comments so the two can be compared.
+NOSE_BRIDGE_TOP = 72                 # "forehead72": top of the nose line
+CONTOUR_RL_A = 12                    # "face12": jaw line, one side of the face
+CONTOUR_RL_B = 28                    # "face28": jaw line, the other side
+# Eyelid pairs (one point on each lid) for the eye-openness ratio.
+LEFT_EYE_LIDS = ((41, 36), (42, 37))
+RIGHT_EYE_LIDS = ((95, 90), (96, 91))
+# Inner-lip pairs (one point on each lip) and the inner mouth corners.
+MOUTH_LIPS = ((66, 54), (70, 57))
+MOUTH_INNER_CORNERS = (65, 69)
+
 
 def eye_centers(landmarks):
     """(left_center, right_center) as the mean of each eye contour."""

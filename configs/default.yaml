@@ -55,10 +55,19 @@ landmark:                         # S5
   input_size: 192
   bbox_expand: 1.5
 
-pose_fine:                        # S5, solvePnP on 106 landmarks
-  yaw_max_deg: 15
+pose_fine:                        # S5, on the 106 landmarks
+  method: ratio                   # ratio | pnp. D-10: solvePnP measures a frontal face at
+                                  # pitch -8..-22 deg, so 'pnp' rejects nearly everyone
+  # 'ratio' = ims_id_server tools/tools.py::face_analysis, same thresholds (pose.face_ratios)
+  ud_min: 0.20                    # FACE_UP_THRESHOLD: nose line / nose-chin, looking up
+  ud_max: 0.85                    # FACE_DOWN_THRESHOLD: looking down
+  rl_min: 0.5                     # FACE_RF_THRESHOLD: jaw 12 / jaw 28 to the nose, turned
+  rl_max: 2.2                     # FACE_FL_THRESHOLD: turned the other way
+  eye_closed_max: 0.12            # EYE_THRESHOLD: eyelid gap / eye width, closed at or below
+  mouth_open_min: 0.20            # MOUTH_THRESHOLD: lip gap / mouth width, open at or above
+  yaw_max_deg: 15                 # 'pnp' gate only; also scales the best-frame score
   pitch_max_deg: 15
-  roll_max_deg: 10
+  roll_max_deg: 10                # both methods; 'ratio' measures roll on the eye line
 
 iqa:                              # S5 — thresholds only mean something with a fixed
   blur_min: 60                    # measurement area (D-11), hence crop_shrink/crop_size
@@ -87,9 +96,10 @@ best_frame:                       # S8
     max_gap_s: null
     cos_min: null
 
-match:                            # S9 — thresholds are TBD (§6)
-  threshold: null                 # TBD (D-01): calibrated in M9 from TAR@FAR
-  margin_top1_top2: null          # TBD (D-02)
+match:                            # S9
+  threshold: 0.80                 # D-01: set by the user 2026-10-08, still to be calibrated
+                                  # in M9; the admin screen can override it (admin_settings)
+  margin_top1_top2: null          # D-02: null = no top1-top2 margin check; editable too
   vote_k: 3                       # D-17: at least 3 frames must vote for the same patient
   vote_n: 5
   template_agg: max               # TBD (D-03): max | mean over a patient's templates
@@ -97,10 +107,22 @@ match:                            # S9 — thresholds are TBD (§6)
 decision:                         # S10 — rule engine (§6.3)
   no_match_below: null            # TBD (D-04): below this, say "not in today's list"
   spoof_min_frames: 2             # C-20: a session is a spoof at 2+ rejected frames
-  enabled_outcomes:               # only the outcomes named in the spec until D-04 is closed
-    - spoof_suspect
+  enabled_outcomes:               # D-04: candidate_suggested enabled 2026-10-08;
+    - spoof_suspect               # no_match still waits for no_match_below
     - low_quality
     - review_required
+    - candidate_suggested
+
+admin_settings:                   # what the kiosk admin screen may change, and within what
+  match.threshold:                # range; saved values live in the database (storage/settings)
+    min: 0.50
+    max: 0.95
+    step: 0.05
+  match.margin_top1_top2:
+    min: 0.05
+    max: 0.30
+    step: 0.05
+    nullable: true                # "Không xét": no margin check at all
 
 session:                          # C-21 (D-21)
   await_nurse_timeout_s: 30       # then the session closes itself as `timeout`
@@ -142,8 +164,10 @@ kiosk:
   device_name: KIOSK-01           # read out to the technician when something breaks
   support_phone: null             # TBD: no number yet, so the error screen offers none
   preview_fps: 15                 # engine write rate AND kiosk read rate
-  preview_width: 480
-  preview_path: /dev/shm/edgeface/preview.jpg
+  preview_format: raw             # C-09: raw = uncompressed RGB at the camera's size | jpeg
+  preview_width: null             # null = the camera's own width (1920); a number scales
+  preview_jpeg_quality: 85        # preview_format: jpeg only
+  preview_path: /dev/shm/edgeface/preview.rgb
 
 storage:
   db_path: var/edge.db            # nano.yaml overrides with /var/lib/edgeface/edge.db

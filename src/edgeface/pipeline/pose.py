@@ -1,4 +1,4 @@
-"""S3 coarse pose (5 keypoints) and S5 fine pose (106 landmarks + solvePnP).
+"""S3 coarse pose (5 keypoints) and S5 fine pose (106-landmark ratios, plus solvePnP).
 
 Sign convention, shared by both stages and locked by tests/unit/test_pose_*.py:
   yaw   > 0 : the face turns so the nose moves towards the right of the IMAGE
@@ -12,6 +12,7 @@ import numpy as np
 
 from edgeface.common.timing import timed
 from edgeface.pipeline.base import fail, ok
+from edgeface.pipeline import landmark_index as li
 from edgeface.pipeline.landmark_index import POSE_POINTS_2D
 from edgeface.types import GuidanceCode
 
@@ -155,15 +156,110 @@ def fine_from_landmarks(landmarks, image_shape, cfg=None):
     return result
 
 
+def _dist(landmarks, a, b):
+    return float(np.linalg.norm(landmarks[a] - landmarks[b]))
+
+
+def _ratio(numerator, denominator):
+    return None if denominator < EPS else numerator / denominator
+
+
+def _opening(landmarks, lid_pairs, corners):
+    """Mean gap between the paired points over the width between the corners."""
+    gaps = sum(_dist(landmarks, a, b) for a, b in lid_pairs)
+    return _ratio(gaps, len(lid_pairs) * _dist(landmarks, corners[0], corners[1]))
+
+
+def face_ratios(landmarks):
+    """{'eye', 'mouth', 'ud', 'rl'} from the 106 landmarks, or None if one is undefined.
+
+    Ported from ims_id_server tools/tools.py::face_analysis, which gates its live
+    enrolment on exactly these numbers:
+      eye   : eyelid gap over eye width, mean of both eyes (low = closed)
+      mouth : inner-lip gap over inner mouth width (high = open)
+      ud    : top of the nose line to the nose tip, over the nose tip to the chin
+              (low = looking up, high = looking down)
+      rl    : jaw point 12 to the nose tip, over jaw point 28 to the nose tip
+              (~1 = frontal; the nose moves towards one side as the head turns)
+    Being ratios of distances in the image, they need neither a 3D face model nor the
+    camera intrinsics, which is what makes solvePnP unusable as a gate here (D-10).
+    """
+    lmk = np.asarray(landmarks, dtype=np.float64)
+    left_eye = _opening(lmk, li.LEFT_EYE_LIDS, (li.LEFT_EYE_OUTER, li.LEFT_EYE_INNER))
+    right_eye = _opening(lmk, li.RIGHT_EYE_LIDS, (li.RIGHT_EYE_INNER, li.RIGHT_EYE_OUTER))
+    result = {
+        "eye": None if left_eye is None or right_eye is None else (left_eye + right_eye) / 2.0,
+        "mouth": _opening(lmk, li.MOUTH_LIPS, li.MOUTH_INNER_CORNERS),
+        "ud": _ratio(_dist(lmk, li.NOSE_BRIDGE_TOP, li.NOSE_TIP),
+                     _dist(lmk, li.CHIN, li.NOSE_TIP)),
+        "rl": _ratio(_dist(lmk, li.CONTOUR_RL_A, li.NOSE_TIP),
+                     _dist(lmk, li.CONTOUR_RL_B, li.NOSE_TIP)),
+    }
+    if any(value is None for value in result.values()):
+        return None
+    return result
+
+
+def roll_from_landmarks(landmarks):
+    """Roll in degrees from the line through the two eye centres, as S3 measures it."""
+    left_eye, right_eye = li.eye_centers(np.asarray(landmarks, dtype=np.float64))
+    delta = right_eye - left_eye
+    if float(np.linalg.norm(delta)) < EPS:
+        return None
+    return math.degrees(math.atan2(delta[1], delta[0]))
+
+
+def _ratio_gate(landmarks, limits):
+    """(guidance or None, numbers) for pose_fine.method == 'ratio'."""
+    ratios = face_ratios(landmarks)
+    roll = roll_from_landmarks(landmarks)
+    if ratios is None or roll is None:
+        return GuidanceCode.LOOK_STRAIGHT, ratios
+    numbers = dict(ratios, roll=roll)
+    if not limits["ud_min"] < ratios["ud"] < limits["ud_max"]:
+        return GuidanceCode.LOOK_STRAIGHT, numbers
+    if not limits["rl_min"] <= ratios["rl"] <= limits["rl_max"]:
+        return GuidanceCode.LOOK_STRAIGHT, numbers
+    if abs(roll) > limits["roll_max_deg"]:
+        return GuidanceCode.LOOK_STRAIGHT, numbers
+    if ratios["eye"] <= limits["eye_closed_max"]:
+        return GuidanceCode.EYES_CLOSED, numbers
+    if ratios["mouth"] >= limits["mouth_open_min"]:
+        return GuidanceCode.MOUTH_OPEN, numbers
+    return None, numbers
+
+
+def _pnp_gate(angles, limits):
+    if angles is None:
+        return GuidanceCode.LOOK_STRAIGHT
+    if (abs(angles["yaw"]) > limits["yaw_max_deg"]
+            or abs(angles["pitch"]) > limits["pitch_max_deg"]
+            or abs(angles["roll"]) > limits["roll_max_deg"]):
+        return GuidanceCode.LOOK_STRAIGHT
+    return None
+
+
 @timed("S5")
 def fine_pose(landmarks, image_shape, cfg):
-    """S5 (pose half): gate on yaw/pitch/roll from the 106 landmarks."""
-    pose = fine_from_landmarks(landmarks, image_shape, cfg)
-    if pose is None:
-        return fail(GuidanceCode.LOOK_STRAIGHT, None)
+    """S5 (pose half): gate on the 106 landmarks.
+
+    pose_fine.method selects the gate. 'ratio' (the default) is the ims_id_server check
+    above; 'pnp' gates on the solvePnP angles, which on a frontal face come out with a
+    pitch of -8 to -22 degrees and so reject nearly everyone (D-10). The solvePnP angles
+    are computed either way: the kiosk and the best-frame score read yaw/pitch/roll.
+    """
     limits = cfg["pose_fine"]
-    if (abs(pose["yaw"]) > limits["yaw_max_deg"]
-            or abs(pose["pitch"]) > limits["pitch_max_deg"]
-            or abs(pose["roll"]) > limits["roll_max_deg"]):
-        return fail(GuidanceCode.LOOK_STRAIGHT, pose)
-    return ok(pose)
+    angles = fine_from_landmarks(landmarks, image_shape, cfg)
+    if limits.get("method", "ratio") == "pnp":
+        return (ok(angles) if _pnp_gate(angles, limits) is None
+                else fail(GuidanceCode.LOOK_STRAIGHT, angles))
+
+    reason, numbers = _ratio_gate(landmarks, limits)
+    if angles is None and numbers is None:
+        data = None
+    else:
+        data = dict(angles or {"yaw": None, "pitch": None, "roll": None})
+        data.update(numbers or {})
+    if reason is not None:
+        return fail(reason, data)
+    return ok(data)

@@ -80,7 +80,8 @@ fi
 
 echo "== runtime directories"
 install -d -o "$TARGET_USER" -g "$TARGET_USER" -m 750 /var/lib/edgeface /var/lib/edgeface/evidence
-install -d -m 755 /dev/shm/edgeface || true
+# Owned by the service user: the engine writes the kiosk preview here (publisher.py).
+install -d -o "$TARGET_USER" -g "$TARGET_USER" -m 755 /dev/shm/edgeface || true
 
 echo "== versions"
 python3 - <<'PY'

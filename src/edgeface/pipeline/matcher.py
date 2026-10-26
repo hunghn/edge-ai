@@ -79,11 +79,13 @@ def match(embeddings, gallery, cfg):
     threshold = match_cfg.get("threshold")
     margin_min = match_cfg.get("margin_top1_top2")
     votes = len(voting)
-    if threshold is None or margin_min is None:
-        passed = None                      # D-01/D-02 not calibrated yet: S10 decides
+    if threshold is None:
+        passed = None                      # D-01 not set: S10 decides
     else:
+        # margin_min None: no margin check (D-02). margin None: nobody else in the
+        # gallery, so there is no runner-up to be confused with.
         passed = (votes >= match_cfg["vote_k"] and top1_score >= threshold
-                  and (margin is None or margin >= margin_min))
+                  and (margin_min is None or margin is None or margin >= margin_min))
 
     return MatchResult(top1_code=winner, top1_score=top1_score, top2_code=top2_code,
                        top2_score=top2_score, margin=margin, votes=votes,

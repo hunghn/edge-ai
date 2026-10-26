@@ -40,6 +40,7 @@ TITLE_ICONS = {
     vm.ALERT: "warning", vm.ERROR: "error", vm.SEARCH: "search", vm.PIN: "lock",
     vm.ADMIN: "tune", vm.PATIENTS: "group", vm.STATUS: "pulse",
     vm.CHANGE_PIN: "key", vm.DUPLICATE: "person_search", vm.ENROLL: "person_add",
+    vm.SETTINGS: "tune",
 }
 
 
@@ -82,7 +83,7 @@ class AppBar(QtWidgets.QWidget):
         self._icon_name = None
         self._widgets = []
 
-    def render(self, title, severity, chips=(), icon_name=None, subtitle=""):
+    def render(self, title, severity, chips=(), icon_name=None, subtitle="", matched=False):
         if self.title.text() != title:
             self.title.setText(title)
         if self.subtitle.text() != subtitle:
@@ -92,15 +93,15 @@ class AppBar(QtWidgets.QWidget):
         # An alarm colours the whole bar, not just the banner: that is what makes it
         # readable from the other side of the room.
         name = {vm.ALARM: "appBarAlarm", vm.ATTENTION: "appBarWarn"}.get(
-            severity, "appBar")
+            severity, "appBarOk" if matched else "appBar")
         if name != self.objectName():
             self.setObjectName(name)
             self.style().unpolish(self)
             self.style().polish(self)
         if (icon_name, name) != self._icon_name:
             self._icon_name = (icon_name, name)
-            accent = {"appBarAlarm": "error", "appBarWarn": "warn"}.get(
-                name, "on_surface_var")
+            accent = {"appBarAlarm": "error", "appBarWarn": "warn",
+                      "appBarOk": "ok"}.get(name, "on_surface_var")
             self.icon.setPixmap(icons.pixmap(icon_name or "person", 30,
                                              theme.colour(accent), 2.2))
 
@@ -150,7 +151,11 @@ class CameraPanel(QtWidgets.QWidget):
                          QtCore.Qt.AlignBottom | QtCore.Qt.AlignHCenter)
         layout.setContentsMargins(14, 14, 14, 18)
 
-    def render(self, cue="", tags=()):
+    def render(self, cue="", tags=(), tone=None):
+        if self.property("tone") != tone:
+            self.setProperty("tone", tone)
+            self.style().unpolish(self)
+            self.style().polish(self)
         if self.cue.text() != cue:
             self.cue.setText(cue)
         self.cue.setVisible(bool(cue))
@@ -184,20 +189,24 @@ class ActionBar(QtWidgets.QWidget):
         row.addLayout(self.buttons)
 
     def render(self, buttons, note=""):
+        key = tuple((b.kind, b.label, b.primary) for b in buttons)
+        if key != self._shown:
+            self._shown = key
+            # The note goes first, and out of the way: a long note beside the four buttons
+            # of the previous screen is wider than the window, and a window that is asked
+            # for that width grows and does not shrink back. It matters now that one bar
+            # serves the whole identify flow, where the buttons and the note swap at once.
+            self.note.setVisible(False)
+            ui.clear_layout(self.buttons)
+            # Text buttons first, then the one that says no, then the one that says yes.
+            ordered = ([b for b in buttons if not b.primary and b.kind not in DANGER_KINDS]
+                       + [b for b in buttons if b.kind in DANGER_KINDS]
+                       + [b for b in buttons if b.primary])
+            for button in ordered:
+                self.buttons.addWidget(self._button(button))
         if self.note.text() != note:
             self.note.setText(note)
         self.note.setVisible(bool(note))
-        key = tuple((b.kind, b.label, b.primary) for b in buttons)
-        if key == self._shown:
-            return
-        self._shown = key
-        ui.clear_layout(self.buttons)
-        # Text buttons first, then the one that says no, then the one that says yes.
-        ordered = ([b for b in buttons if not b.primary and b.kind not in DANGER_KINDS]
-                   + [b for b in buttons if b.kind in DANGER_KINDS]
-                   + [b for b in buttons if b.primary])
-        for button in ordered:
-            self.buttons.addWidget(self._button(button))
 
     def _button(self, button):
         widget = QtWidgets.QPushButton(button.label)
@@ -273,14 +282,22 @@ class Page(QtWidgets.QWidget):
 
     def render(self, view):
         self.bar.render(view.title or "", view.severity, view.chips,
-                        TITLE_ICONS.get(view.screen, "person"))
+                        TITLE_ICONS.get(view.screen, "person"),
+                        matched=self.matched(view))
         self.banner.render(view.message or "", view.severity)
         self.render_fields(view)
         self.actions.ring.render(view.countdown_s, self.timeout_total())
         self.actions.render(view.buttons, self.action_note(view))
         if self.camera is not None:
-            self.camera.setVisible(view.show_preview)
+            self.camera.setVisible(self.camera_visible(view))
         self.render_body(view)
+
+    def matched(self, _view):
+        """True when the app bar should turn green: a page that shows a match says so."""
+        return False
+
+    def camera_visible(self, view):
+        return view.show_preview
 
     def action_note(self, _view):
         return ""
@@ -337,15 +354,49 @@ class IdlePage(Page):
         return strings.IDLE_FOOT
 
 
-class GuidancePage(Page):
-    """Camera on the left, what the pipeline is doing on the right."""
+class RecognitionPage(Page):
+    """The whole identify flow on one screen: guidance, the result, and the alerts.
+
+    These used to be three pages, each with its own camera panel and layout, so the
+    moment the system had an answer the picture jumped and the buttons moved under the
+    nurse's finger. Now the camera stays where it is and only the panel beside it
+    changes: the pipeline steps while a face is being read, the patient's card once it
+    has been matched, the reasons when it could not be. The buttons stay on the same bar.
+
+    The colour is the answer: the card and the frame round the picture are green for a
+    match, amber when the system is not sure, red for an alarm.
+    """
+
+    PANEL_OF = {vm.GUIDANCE: 0, vm.CANDIDATE: 1, vm.ALERT: 2}
 
     def build(self):
+        self._candidate_shown = None
+        self._metrics_shown = None
         split = QtWidgets.QHBoxLayout()
         split.setSpacing(24)
-        split.addWidget(self.camera, 17)
+        split.addWidget(self.camera, 10)
+        self.side = QtWidgets.QStackedWidget()
+        self.side.addWidget(self._build_guidance())
+        self.side.addWidget(self._build_candidate())
+        self.side.addWidget(self._build_alert())
+        # A wrapped label asks for the width of its whole sentence on one line, and the
+        # longest sentence of the three panels would then widen the window. The column
+        # takes the width the split gives it and the labels wrap inside that.
+        self.side.setSizePolicy(QtWidgets.QSizePolicy.Ignored,
+                                QtWidgets.QSizePolicy.Preferred)
+        split.addWidget(self.side, 9)
+        self.body.addLayout(split, 1)
+        # The bar is empty while a face is being read and full once there is a result.
+        # Left to size itself it would grow by a button's height at that moment and the
+        # camera above it would shrink - the jump this page exists to remove. 84 is the
+        # primary button (style.qss), 18 the bar's margin above and below.
+        self.actions.setMinimumHeight(84 + 2 * 18)
 
-        side = QtWidgets.QVBoxLayout()
+    # ------------------------------------------------------------------ panels
+    def _build_guidance(self):
+        panel = QtWidgets.QWidget()
+        side = QtWidgets.QVBoxLayout(panel)
+        side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(18)
         self.steps = stepper.VStepper(strings.STEP_LABELS)
         side.addWidget(self.steps)
@@ -363,50 +414,33 @@ class GuidancePage(Page):
         self.progress_card.add(ui.label(strings.HOLD_A_MOMENT, "body", wrap=True))
         side.addWidget(self.progress_card)
         side.addStretch(1)
-        split.addLayout(side, 10)
-        self.body.addLayout(split, 1)
+        return panel
 
-    def render_body(self, view):
-        self.banner.setVisible(False)          # the instruction lives on the picture
-        self.camera.render(view.message or "", view.camera)
-        self.steps.render(view.steps or vm.steps_for(None, {}))
-        taken, wanted = view.progress or (None, None)
-        self.progress_card.setVisible(view.progress is not None)
-        if view.progress is None:
-            return
-        text = u"{} / {}".format(taken, wanted)
-        if self.progress_value.text() != text:
-            self.progress_value.setText(text)
-        self.progress_bar.setMaximum(max(1, wanted))
-        self.progress_bar.setValue(taken)
-
-
-class CandidatePage(Page):
-    """The frame that was chosen, beside the record it was matched to."""
-
-    def build(self):
-        split = QtWidgets.QHBoxLayout()
-        split.setSpacing(24)
-        split.addWidget(self.camera, 10)
-
-        side = QtWidgets.QVBoxLayout()
+    def _build_candidate(self):
+        panel = QtWidgets.QWidget()
+        side = QtWidgets.QVBoxLayout(panel)
+        side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(16)
         self.identity = ui.Card()
-        self.avatar = ui.Avatar("")
-        self.name = ui.label("", "headline")
+        self.avatar = ui.Avatar("", size=128)
+        self.name = ui.label("", "headline", wrap=True)
         self.code = ui.label("", "mono")
         who = QtWidgets.QVBoxLayout()
-        who.setSpacing(2)
+        who.setSpacing(4)
+        who.addStretch(1)
         who.addWidget(self.name)
         who.addWidget(self.code)
+        who.addStretch(1)
         head = QtWidgets.QHBoxLayout()
-        head.setSpacing(16)
+        head.setSpacing(20)
         head.addWidget(self.avatar, 0, QtCore.Qt.AlignTop)
         head.addLayout(who, 1)
         self.identity.add_layout(head)
         self.confidence = ui.Chip("", "shield_check", "ok")
         self.appointment = ui.Chip("", "calendar")
         self.identity.add_layout(ui.row(self.confidence, self.appointment, None))
+        self.hint = ui.label("", "body", wrap=True)
+        self.identity.add(self.hint)
         side.addWidget(self.identity)
 
         self.detail = ui.Card(outlined=True)
@@ -417,33 +451,83 @@ class CandidatePage(Page):
         self._detail_shown = None
         side.addWidget(self.detail)
         side.addStretch(1)
-        split.addLayout(side, 13)
-        self.body.addLayout(split, 1)
+        return panel
 
-    # The card is built from the same (label, value) rows the tests read, so there is
-    # one description of a candidate rather than two that can disagree.
-    IDENTITY_LABELS = (strings.LABEL_CODE, strings.LABEL_NAME, strings.LABEL_BIRTH_YEAR,
-                       strings.LABEL_APPOINTMENT, strings.LABEL_CONFIDENCE)
+    def _build_alert(self):
+        """Spoof, poor quality, nobody found: three reasons, one panel.
+
+        The patient's name is never on it. A spoof alert is about the person standing
+        there, not about the record the system nearly picked.
+        """
+        panel = QtWidgets.QWidget()
+        side = QtWidgets.QVBoxLayout(panel)
+        side.setContentsMargins(0, 0, 0, 0)
+        side.setSpacing(16)
+        self.headline = ui.label("", "headline", wrap=True)
+        side.addWidget(self.headline)
+        self.alert_message = ui.label("", "message", wrap=True)
+        side.addWidget(self.alert_message)
+
+        self.todo = ui.Card(outlined=True)
+        self.todo.add(ui.SectionLabel(strings.SPOOF_TODO))
+        for line in strings.SPOOF_STEPS:
+            self.todo.add(ui.label(line, "body", wrap=True))
+        side.addWidget(self.todo)
+
+        self.metrics = ui.Card(outlined=True)
+        self.metrics.add(ui.SectionLabel(strings.REJECTED_BECAUSE))
+        self.metric_rows = QtWidgets.QVBoxLayout()
+        self.metric_rows.setSpacing(10)
+        self.metrics.add_layout(self.metric_rows)
+        side.addWidget(self.metrics)
+
+        self.evidence = ui.Chip("", "folder")
+        side.addWidget(self.evidence, 0, QtCore.Qt.AlignLeft)
+        side.addStretch(1)
+        return panel
+
+    # ------------------------------------------------------------------ page hooks
+    def matched(self, view):
+        return view.screen == vm.CANDIDATE and view.severity == vm.OK
+
+    def camera_visible(self, _view):
+        return True                  # the picture stays put whatever the answer is
+
+    def action_note(self, view):
+        return (strings.SPOOF_NO_DETAILS
+                if view.screen == vm.ALERT and view.severity == vm.ALARM else "")
 
     def render_fields(self, view):
-        if view.fields == self._fields_shown:
+        """The candidate card. Built from the same (label, value) rows the tests read, so
+        there is one description of a candidate rather than two that can disagree."""
+        if view.screen != vm.CANDIDATE:
             return
-        self._fields_shown = view.fields
+        photo = (self.extras or {}).get("face")
+        key = (view.fields, view.severity, view.message, photo)
+        if key == self._candidate_shown:
+            return
+        self._candidate_shown = key
         rows = dict(view.fields)
+        tone = "ok" if view.severity == vm.OK else "attention"
+        if self.identity.property("tone") != tone:
+            self.identity.setProperty("tone", tone)
+            self.identity.style().unpolish(self.identity)
+            self.identity.style().polish(self.identity)
+
         name = rows.get(strings.LABEL_NAME, "")
         self.name.setText(name or rows.get(strings.LABEL_CODE, ""))
         self.avatar.set_name(name)
+        self.avatar.set_photo(photo)
         code = rows.get(strings.LABEL_CODE, "")
         year = rows.get(strings.LABEL_BIRTH_YEAR)
         self.code.setText(u"{} · sinh {}".format(code, year) if year else code)
-        confidence = rows.get(strings.LABEL_CONFIDENCE, "")
-        self.confidence.set_text(confidence)
-        self.confidence.set_tone("ok" if confidence == strings.CONFIDENCE_HIGH
-                                 else "attention")
+        self.confidence.set_text(rows.get(strings.LABEL_CONFIDENCE, ""))
+        self.confidence.set_tone(tone)
         appointment = rows.get(strings.LABEL_APPOINTMENT)
         self.appointment.setVisible(bool(appointment))
         if appointment:
             self.appointment.set_text(u"Lịch {}".format(appointment))
+        self.hint.setText(view.message or "")
 
         # Everything the nurse does not need in order to answer "is this them" goes in
         # the quiet card underneath, and disappears with kiosk.show_score.
@@ -467,58 +551,40 @@ class CandidatePage(Page):
         self.detail_row.addStretch(1)
 
     def render_body(self, view):
-        self.camera.render("", view.camera)
+        # The message lives inside the panel, not in a banner above it: a banner that
+        # appears only when an answer arrives would push the camera down.
+        self.banner.setVisible(False)
+        self.side.setCurrentIndex(self.PANEL_OF.get(view.screen, 0))
+        if view.screen == vm.CANDIDATE:
+            self.camera.render("", view.camera, view.severity)
+        elif view.screen == vm.ALERT:
+            self.camera.render("", (), view.severity)
+            self._render_alert(view)
+        else:
+            self.camera.render(view.message or "", view.camera)
+            self._render_guidance(view)
 
+    def _render_guidance(self, view):
+        self.steps.render(view.steps or vm.steps_for(None, {}))
+        taken, wanted = view.progress or (None, None)
+        self.progress_card.setVisible(view.progress is not None)
+        if view.progress is None:
+            return
+        text = u"{} / {}".format(taken, wanted)
+        if self.progress_value.text() != text:
+            self.progress_value.setText(text)
+        self.progress_bar.setMaximum(max(1, wanted))
+        self.progress_bar.setValue(taken)
 
-class AlertPage(Page):
-    """Spoof, poor quality, nobody found: three reasons, one screen.
-
-    The patient's name is never on it. A spoof alert is about the person standing there,
-    not about the record the system nearly picked.
-    """
-
-    def build(self):
-        split = QtWidgets.QHBoxLayout()
-        split.setSpacing(24)
-        split.addWidget(self.camera, 10)
-
-        side = QtWidgets.QVBoxLayout()
-        side.setSpacing(16)
-        self.headline = ui.label("", "headline", wrap=True)
-        side.addWidget(self.headline)
-
-        self.todo = ui.Card(outlined=True)
-        self.todo.add(ui.SectionLabel(strings.SPOOF_TODO))
-        for line in strings.SPOOF_STEPS:
-            self.todo.add(ui.label(line, "body", wrap=True))
-        side.addWidget(self.todo)
-
-        self.metrics = ui.Card(outlined=True)
-        self.metrics.add(ui.SectionLabel(strings.REJECTED_BECAUSE))
-        self.metric_rows = QtWidgets.QVBoxLayout()
-        self.metric_rows.setSpacing(10)
-        self.metrics.add_layout(self.metric_rows)
-        self._metrics_shown = None
-        side.addWidget(self.metrics)
-
-        self.evidence = ui.Chip("", "folder")
-        side.addWidget(self.evidence, 0, QtCore.Qt.AlignLeft)
-        side.addStretch(1)
-        split.addLayout(side, 13)
-        self.body.addLayout(split, 1)
-
-    def action_note(self, view):
-        return strings.SPOOF_NO_DETAILS if view.severity == vm.ALARM else ""
-
-    def render_body(self, view):
+    def _render_alert(self, view):
         spoof = view.severity == vm.ALARM
         self.headline.setText(strings.SPOOF_HEADLINE if spoof else "")
         self.headline.setVisible(spoof)
+        self.alert_message.setText(view.message or "")
         self.todo.setVisible(spoof)
         self.evidence.setVisible(spoof)
         if spoof:
             self.evidence.set_text(strings.SPOOF_EVIDENCE)
-        self.camera.render("", ())
         self.metrics.setVisible(bool(view.metrics))
         if view.metrics == self._metrics_shown:
             return
@@ -627,9 +693,11 @@ class RailPage(Page):
     RAIL = (("enroll", strings.BTN_MENU_ENROLL, "person_add"),
             ("patients", strings.BTN_MENU_PATIENTS, "group"),
             ("status", strings.BTN_MENU_STATUS, "pulse"),
+            ("settings", strings.BTN_MENU_SETTINGS, "tune"),
             ("change_pin", strings.BTN_CHANGE_PIN, "key"))
     RAIL_LABELS = {"enroll": u"Đăng ký", "patients": u"BN hôm nay",
-                   "status": u"Trạng thái", "change_pin": u"Đổi PIN"}
+                   "status": u"Trạng thái", "settings": u"Cài đặt",
+                   "change_pin": u"Đổi PIN"}
     ACTIVE = None
 
     def __init__(self, parent=None, cfg=None, screen=None, **kwargs):
@@ -647,9 +715,14 @@ class RailPage(Page):
 
 
 class AdminPage(RailPage):
-    """The landing screen: four cards, each already carrying its own number."""
+    """The landing screen: four cards, each already carrying its own number.
+
+    Settings has no card: a fifth one does not fit a 1024x600 screen in either a 3x2 or
+    a 2x3 grid. It is on the rail, and in the action row of this screen.
+    """
 
     ACTIVE = None
+    COLUMNS = 2
     CARDS = (("enroll", strings.BTN_MENU_ENROLL, "person_add", True),
              ("patients", strings.BTN_MENU_PATIENTS, "group", False),
              ("status", strings.BTN_MENU_STATUS, "pulse", False),
@@ -676,7 +749,7 @@ class AdminPage(RailPage):
             caption = ui.label("", "body", wrap=True)
             holder.add(button)
             holder.add(caption)
-            grid.addWidget(holder, index // 2, index % 2)
+            grid.addWidget(holder, index // self.COLUMNS, index % self.COLUMNS)
             self.cards[kind] = button
             self.captions[kind] = caption
         self.body.addLayout(grid)
@@ -802,6 +875,74 @@ class StatusPage(RailPage):
         self.device.setVisible(bool(line))
 
 
+class SettingCard(ui.Card):
+    """One editable number: what it is, its value large, and a step down / step up."""
+
+    adjusted = QtCore.pyqtSignal(str, int)
+
+    def __init__(self, key, parent=None):
+        super(SettingCard, self).__init__(parent=parent)
+        self.body.setContentsMargins(24, 14, 24, 14)
+        self.key = key
+        # Text on the left, the stepper on the right: the two cards stack, and a
+        # 1024x600 screen has room for two rows like this but not for two columns.
+        line = QtWidgets.QHBoxLayout()
+        line.setSpacing(20)
+        text = QtWidgets.QVBoxLayout()
+        text.setSpacing(4)
+        self.title = ui.label("", "fieldValue", wrap=True)
+        self.help = ui.label("", "body", wrap=True)
+        self.source = ui.label("", "tileFoot", wrap=True)
+        for widget in (self.title, self.help, self.source):
+            text.addWidget(widget)
+        line.addLayout(text, 1)
+        self.minus = ui.IconButton("minus", size=32)
+        self.minus.clicked.connect(lambda _c=False: self.adjusted.emit(self.key, -1))
+        self.plus = ui.IconButton("plus", size=32)
+        self.plus.clicked.connect(lambda _c=False: self.adjusted.emit(self.key, +1))
+        for button in (self.minus, self.plus):
+            button.setFixedSize(72, 64)
+        self.value = ui.label("", "tileValue")
+        self.value.setAlignment(QtCore.Qt.AlignCenter)
+        self.value.setMinimumWidth(190)
+        line.addWidget(self.minus, 0, QtCore.Qt.AlignVCenter)
+        line.addWidget(self.value, 0, QtCore.Qt.AlignVCenter)
+        line.addWidget(self.plus, 0, QtCore.Qt.AlignVCenter)
+        self.add_layout(line)
+
+    def render(self, row):
+        for widget, text in ((self.title, row["label"]), (self.help, row["help"]),
+                             (self.value, row["value"]), (self.source, row["source"])):
+            if widget.text() != text:
+                widget.setText(text)
+        self.minus.setEnabled(row["can_dec"])
+        self.plus.setEnabled(row["can_inc"])
+
+
+class SettingsPage(RailPage):
+    """The match thresholds, each with a step down and a step up (storage/settings.py)."""
+
+    ACTIVE = "settings"
+    adjusted = QtCore.pyqtSignal(str, int)
+
+    def build(self):
+        self.cards = {}
+        self.grid = QtWidgets.QVBoxLayout()
+        self.grid.setSpacing(12)
+        self.body.addLayout(self.grid)
+        self.body.addStretch(1)
+
+    def render_body(self, view):
+        for row in self.extras.get("rows") or ():
+            card = self.cards.get(row["key"])
+            if card is None:
+                card = SettingCard(row["key"])
+                card.adjusted.connect(self.adjusted)
+                self.grid.addWidget(card)
+                self.cards[row["key"]] = card
+            card.render(row)
+
+
 class ChangePinPage(RailPage):
     """Old, new, then new again, with the three steps drawn along the top."""
 
@@ -845,8 +986,6 @@ class ChangePinPage(RailPage):
         if len(self._pin) < self.pin_length:
             self._pin += digit
             self._redraw()
-        if len(self._pin) == self.pin_length:
-            self._submit()
 
     def _backspace(self):
         self._pin = self._pin[:-1]
@@ -1077,8 +1216,6 @@ class PinPage(Page):
         if len(self._pin) < self.pin_length:
             self._pin += digit
             self._redraw()
-        if len(self._pin) == self.pin_length:
-            self._submit()
 
     def _backspace(self):
         self._pin = self._pin[:-1]
@@ -1206,13 +1343,15 @@ class KioskWindow(QtWidgets.QMainWindow):
         roi = (cfg.get("subject") or {}).get("roi")
         pin_length = (cfg.get("auth") or {}).get("pin_length", 6)
         self.stack = QtWidgets.QStackedWidget()
+        # One page answers for the three identify screens, so the camera does not move
+        # when the result arrives; refresh() finds the same widget and switches nothing.
+        recognition = RecognitionPage(with_preview=True, roi=roi, cfg=cfg,
+                                      screen=vm.GUIDANCE)
         self.pages = {
             vm.IDLE: IdlePage(cfg=cfg, screen=vm.IDLE),
-            vm.GUIDANCE: GuidancePage(with_preview=True, roi=roi, cfg=cfg,
-                                      screen=vm.GUIDANCE),
-            vm.CANDIDATE: CandidatePage(with_preview=True, roi=roi, cfg=cfg,
-                                        screen=vm.CANDIDATE),
-            vm.ALERT: AlertPage(with_preview=True, roi=roi, cfg=cfg, screen=vm.ALERT),
+            vm.GUIDANCE: recognition,
+            vm.CANDIDATE: recognition,
+            vm.ALERT: recognition,
             vm.ERROR: ErrorPage(cfg=cfg, screen=vm.ERROR),
             vm.SEARCH: SearchPage(cfg=cfg, screen=vm.SEARCH),
             vm.PIN: PinPage(pin_length=pin_length, cfg=cfg, screen=vm.PIN),
@@ -1221,12 +1360,13 @@ class KioskWindow(QtWidgets.QMainWindow):
             vm.STATUS: StatusPage(cfg=cfg, screen=vm.STATUS),
             vm.CHANGE_PIN: ChangePinPage(pin_length=pin_length, cfg=cfg,
                                          screen=vm.CHANGE_PIN),
+            vm.SETTINGS: SettingsPage(cfg=cfg, screen=vm.SETTINGS),
             vm.DUPLICATE: DuplicatePage(with_preview=True, roi=roi, cfg=cfg,
                                         screen=vm.DUPLICATE),
             vm.ENROLL: EnrollPage(with_preview=True, roi=roi, cfg=cfg,
                                   screen=vm.ENROLL),
         }
-        for page in self.pages.values():
+        for page in set(self.pages.values()):
             page.button_clicked.connect(self._on_button)
             self.stack.addWidget(page)
         self.enroll_form = EnrollFormPage(cfg=cfg, screen=vm.ENROLL)
@@ -1243,6 +1383,7 @@ class KioskWindow(QtWidgets.QMainWindow):
         self.pages[vm.PIN].submitted.connect(self._on_pin)
         self.pages[vm.CHANGE_PIN].submitted.connect(self._on_change_pin)
         self.pages[vm.PATIENTS].patient_selected.connect(self._on_patient_selected)
+        self.pages[vm.SETTINGS].adjusted.connect(self._on_setting_adjusted)
         self.setCentralWidget(self.stack)
 
         self._poll = QtCore.QTimer(self)
@@ -1297,6 +1438,10 @@ class KioskWindow(QtWidgets.QMainWindow):
                     "device_line": self.controller.device_line()}
         if screen == vm.ADMIN:
             return self.controller.admin_summary()
+        if screen == vm.SETTINGS:
+            return {"rows": self.controller.settings_rows()}
+        if screen == vm.CANDIDATE:
+            return {"face": self.controller.candidate_face()}
         return {}
 
     def _refresh_preview(self):
@@ -1306,7 +1451,7 @@ class KioskWindow(QtWidgets.QMainWindow):
             return
         if not self.controller.preview_changed():
             return                            # same picture as last tick; nothing to do
-        preview.show_jpeg(self.controller.preview_bytes())
+        preview.show_frame(self.controller.preview_bytes())
 
     def _on_button(self, button):
         if button.kind == "cancel" and self.controller.local_screen == vm.ADMIN:
@@ -1329,16 +1474,16 @@ class KioskWindow(QtWidgets.QMainWindow):
         self.refresh()
 
     def _on_pin(self, pin):
-        operators = self.controller.auth.operators()
-        if not operators:
-            LOG.warning("no operator configured: run scripts/db_admin.py create-operator")
-            return
-        self.controller.unlock(operators[0]["operator_id"], pin)
+        self.controller.submit_pin(pin)
         self.refresh()
 
     def _on_change_pin(self, pin):
         self.controller.touch()
         self.controller.submit_change_pin(pin)
+        self.refresh()
+
+    def _on_setting_adjusted(self, key, direction):
+        self.controller.adjust_setting(key, direction)
         self.refresh()
 
     def _on_patient_selected(self, code):

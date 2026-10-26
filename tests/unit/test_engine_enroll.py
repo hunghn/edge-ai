@@ -102,7 +102,9 @@ def test_duplicate_policy_block(conn, cfg):
 
 
 def test_review_without_a_calibrated_threshold(conn, cfg):
-    """D-01 still null: show the closest patient instead of claiming a duplicate."""
+    """D-01 null: show the closest patient instead of claiming a duplicate."""
+    cfg = dict(cfg)
+    cfg["match"] = dict(cfg["match"], threshold=None)
     existing(conn, "BN_OLD", unit(7))
     review = enroll.review(form("BN_NEW"), embeddings_of([near(unit(7), 0.2, s)
                                                           for s in range(5)]),

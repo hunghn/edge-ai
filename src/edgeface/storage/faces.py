@@ -12,7 +12,9 @@ This reverses C-04 for this one case, so the limits are deliberately tight:
 - stored as a BLOB, in the database, not as loose files: no path to leak, and the row
   cascades away with the patient at the 24 h expiry or on a revocation;
 - never entered into the outbox, so a face never reaches the server;
-- only read by the duplicate-warning screen.
+- only read by the kiosk: the duplicate-warning screen, and the candidate card on the
+  identify screen, which shows the enrolment picture beside the name so a nurse can
+  compare it with the face in front of her. A patient without one gets initials.
 """
 from edgeface.storage import clock
 from edgeface.storage.db import read_all, read_one

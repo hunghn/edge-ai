@@ -140,9 +140,32 @@ def test_pin_pad_unlocks_the_admin_screen(kiosk):
     keys = {b.text(): b for b in page.findChildren(QtWidgets.QPushButton)}
     for digit in "123456":
         keys[digit].click()
+    # Six digits do not submit by themselves: the nurse checks the dots, then confirms.
+    assert controller.auth.is_unlocked() is False
+    assert page.dots.text().count(u"●") == 6
+    keys["Đồng ý"].click()
     assert controller.auth.is_unlocked() is True
     window.refresh()
     assert window.stack.currentWidget() is window.pages[vm.ADMIN]
+
+
+def test_a_fresh_kiosk_lets_the_nurse_create_the_pin(kiosk):
+    """No operator yet: the PIN screen must not just swallow the digits."""
+    window, controller = kiosk
+    assert operators.count(controller.conn) == 0
+    controller.open_pin()
+    window.refresh()
+    assert "Tạo mã PIN" in rendered_text(window)
+
+    for step_text in ("Nhập lại mã PIN", "Đã tạo mã PIN"):
+        keys = buttons_of(window)
+        for digit in "123456":
+            keys[digit].click()
+        keys["Đồng ý"].click()
+        window.refresh()
+        assert step_text in rendered_text(window)
+    assert window.stack.currentWidget() is window.pages[vm.ADMIN]
+    assert controller.auth.is_unlocked() is True
 
 
 def buttons_of(window):
@@ -188,6 +211,7 @@ def enter_admin(window, controller, pin="123456"):
     keys = buttons_of(window)
     for digit in pin:
         keys[digit].click()
+    keys["Đồng ý"].click()
     window.refresh()
     return window.stack.currentWidget()
 
@@ -330,6 +354,89 @@ def test_identification_card_offers_every_nurse_action(kiosk):
         buttons_of(window)[label].click()
         sent = kiosk_ipc.claim_commands(controller.conn, at=1001.0)
         assert [c["type"] for c in sent] == [expected], label
+
+
+def _candidate(decision, code="BN001", score=0.81):
+    return {"decision": decision, "rule_id": "R5",
+            "candidate": {"code": code, "score": score, "margin": 0.2, "votes": 5, "k": 5}}
+
+
+def test_guidance_result_and_alerts_share_one_screen(kiosk):
+    """The camera must not move when the answer arrives: same page, same picture."""
+    window, controller = kiosk
+    _enrol_with_face(controller, "BN001", "Nguyễn Thị Hà", 90)
+
+    publish(controller.conn, "GUIDING", "STEP_CLOSER")
+    window.refresh()
+    page = window.stack.currentWidget()
+    camera = page.camera
+    assert camera.preview.isVisible()
+
+    steps = (
+        ("AWAIT_NURSE", _candidate("candidate_suggested")),
+        ("AWAIT_NURSE", _candidate("review_required")),
+        ("AWAIT_NURSE", {"decision": "spoof_suspect", "rule_id": "R1"}),
+        ("AWAIT_NURSE", {"decision": "low_quality", "rule_id": "R2"}),
+        ("AWAIT_NURSE", {"decision": "no_match", "rule_id": "R4"}),
+        ("GUIDING", None),
+    )
+    for state, payload in steps:
+        publish(controller.conn, state, "STEP_CLOSER" if state == "GUIDING" else None,
+                payload)
+        window.refresh()
+        assert window.stack.currentWidget() is page
+        assert page.camera is camera and camera.preview.isVisible()
+
+
+def test_the_window_does_not_grow_when_the_answer_swaps_the_buttons(kiosk):
+    """The action bar is shared, so a long note must never sit beside the old buttons."""
+    window, controller = kiosk
+    _enrol_with_face(controller, "BN001", "Nguyễn Thị Hà", 90)
+    window.resize(1280, 800)
+    for state, payload in (("AWAIT_NURSE", _candidate("candidate_suggested")),
+                           ("AWAIT_NURSE", {"decision": "spoof_suspect", "rule_id": "R1"}),
+                           ("AWAIT_NURSE", _candidate("review_required")),
+                           ("AWAIT_NURSE", {"decision": "spoof_suspect", "rule_id": "R1"})):
+        publish(controller.conn, state, None, payload)
+        window.refresh()
+        assert window.width() == 1280, payload["decision"]
+
+
+def test_a_match_is_green_and_an_unsure_one_is_amber(kiosk):
+    window, controller = kiosk
+    _enrol_with_face(controller, "BN001", "Nguyễn Thị Hà", 90)
+    page = window.pages[vm.CANDIDATE]
+
+    publish(controller.conn, "AWAIT_NURSE", None, _candidate("candidate_suggested"))
+    window.refresh()
+    assert page.identity.property("tone") == "ok"
+    assert page.camera.property("tone") == "ok"
+    assert page.bar.objectName() == "appBarOk"
+    assert "Khớp cao" in rendered_text(window)
+
+    publish(controller.conn, "AWAIT_NURSE", None, _candidate("review_required"))
+    window.refresh()
+    assert page.identity.property("tone") == "attention"
+    assert page.camera.property("tone") == "attention"
+    assert page.bar.objectName() == "appBarWarn"
+    assert "Cần kiểm tra" in rendered_text(window)
+
+
+def test_the_card_shows_the_enrolment_photo_or_the_initials(kiosk):
+    window, controller = kiosk
+    _enrol_with_face(controller, "BN001", "Nguyễn Thị Hà", 90)
+    enrol_patient(controller, "BN002", "Trần Văn B")          # no picture stored
+    page = window.pages[vm.CANDIDATE]
+
+    publish(controller.conn, "AWAIT_NURSE", None, _candidate("review_required", "BN001"))
+    window.refresh()
+    assert page.avatar.pixmap() is not None and not page.avatar.pixmap().isNull()
+    assert "Nguyễn Thị Hà" in rendered_text(window) and "BN001" in rendered_text(window)
+
+    publish(controller.conn, "AWAIT_NURSE", None, _candidate("review_required", "BN002"))
+    window.refresh()
+    assert page.avatar.pixmap() is None or page.avatar.pixmap().isNull()
+    assert page.avatar.text() == "TB"                          # initials again
 
 
 def test_manual_search_picks_a_patient_by_hand(kiosk):
@@ -645,3 +752,29 @@ def test_the_form_says_what_is_missing_before_the_engine_has_to(kiosk):
     sent = kiosk_ipc.claim_commands(controller.conn, at=1002.0)
     assert [c["type"] for c in sent] == ["start_enroll"]
     assert form.inputs["full_name"].objectName() == ""
+
+
+def test_settings_are_changed_with_taps_and_fit_the_screen(kiosk):
+    """Rail -> Cài đặt -> + -> Lưu, without the window growing to make room for it."""
+    from edgeface.storage import settings
+
+    window, controller = kiosk
+    enter_admin(window, controller)
+    size = (window.width(), window.height())
+    window.pages[vm.ADMIN].rail.buttons["settings"].click()
+    page = window.stack.currentWidget()
+    assert page is window.pages[vm.SETTINGS]
+    assert set(page.cards) == {"match.threshold", "match.margin_top1_top2"}
+    card = page.cards["match.threshold"]
+    assert card.value.text() == "0.80"
+
+    card.plus.click()
+    assert card.value.text() == "0.85"
+    buttons_of(window)["Lưu"].click()
+    assert settings.overrides(controller.conn, controller.cfg) == {"match.threshold": 0.85}
+    assert (window.width(), window.height()) == size
+    # No wider than the admin screens that already exist (offscreen fonts are larger
+    # than the device's, so an absolute pixel limit would test the font, not the page).
+    widest = max(window.pages[screen].minimumSizeHint().width()
+                 for screen in (vm.ADMIN, vm.STATUS, vm.CHANGE_PIN))
+    assert page.minimumSizeHint().width() <= widest

@@ -197,7 +197,7 @@ def test_admin_menu_offers_every_function(kiosk, conn):
     """The admin screen used to hold one button ("log out") and nothing else."""
     unlocked(kiosk, conn)
     kinds = [button.kind for button in kiosk.view(T0).buttons]
-    assert kinds == ["enroll", "patients", "status", "change_pin", "cancel"]
+    assert kinds == ["enroll", "patients", "status", "change_pin", "settings", "cancel"]
 
 
 def test_redrawing_does_not_postpone_the_lock(kiosk, conn):
@@ -289,6 +289,90 @@ def test_empty_patient_list_says_so(kiosk, conn):
     kiosk.open_admin_tab(vm.PATIENTS)
     view = kiosk.view(T0)
     assert view.fields == () and "Chưa có bệnh nhân" in view.message
+
+
+# --------------------------------------------------------------------- candidate face
+
+
+def test_candidate_face_is_the_enrolment_crop_of_the_candidate(kiosk, conn):
+    from edgeface.storage import faces
+
+    add_patient(conn, "BN001", "Nguyễn Thị Hà")
+    add_patient(conn, "BN002", "Trần Văn B")
+    with db.transaction(conn):
+        faces.save(conn, "BN001", b"jpeg-of-BN001", T0)
+    assert kiosk.candidate_face() is None                       # no state yet
+
+    publish(conn, "AWAIT_NURSE", payload={
+        "decision": "review_required", "candidate": {"code": "BN001", "score": 0.8}})
+    kiosk.poll(T0)
+    assert kiosk.candidate_face() == b"jpeg-of-BN001"
+
+    publish(conn, "AWAIT_NURSE", payload={
+        "decision": "review_required", "candidate": {"code": "BN002", "score": 0.8}})
+    kiosk.poll(T0)
+    assert kiosk.candidate_face() is None                       # BN002 has no picture
+
+    publish(conn, "AWAIT_NURSE", payload={"decision": "no_match"})
+    kiosk.poll(T0)
+    assert kiosk.candidate_face() is None                       # nobody to show
+
+
+# --------------------------------------------------------------------- first-run PIN
+
+
+def test_a_kiosk_with_no_operator_creates_one_from_the_pin_screen(kiosk, conn):
+    kiosk.poll(T0)
+    kiosk.open_admin_tab(vm.ADMIN)
+    view = kiosk.view(T0)
+    assert view.screen == vm.PIN and "Tạo mã PIN" in view.title
+    assert kiosk.needs_setup() is True
+
+    assert kiosk.submit_pin("123456", T0) is False
+    assert "Nhập lại" in kiosk.view(T0).message               # the second step
+    assert operators.count(conn) == 0                          # nothing saved yet
+
+    assert kiosk.submit_pin("123456", T0) is True
+    view = kiosk.view(T0)
+    assert view.screen == vm.ADMIN and "Đã tạo mã PIN" in view.message
+    assert operators.count(conn) == 1
+    assert kiosk.needs_setup() is False
+
+    # The new PIN is the one that unlocks from now on, and the screen no longer offers setup.
+    kiosk.logout()
+    kiosk.open_pin()
+    assert kiosk.view(T0).title != "Tạo mã PIN quản trị"
+    assert kiosk.submit_pin("000000", T0) is False
+    assert kiosk.submit_pin("123456", T0) is True
+
+
+def test_setup_rejects_a_mistyped_repeat_and_saves_nothing(kiosk, conn):
+    kiosk.open_pin()
+    kiosk.submit_pin("123456", T0)
+    assert kiosk.submit_pin("123457", T0) is False
+    view = kiosk.view(T0)
+    assert "không giống nhau" in view.message and view.severity == vm.ATTENTION
+    assert operators.count(conn) == 0
+    assert kiosk.local_context["step"] == "new"                # asked from the start again
+
+
+def test_setup_rejects_a_pin_of_the_wrong_length(kiosk, conn):
+    kiosk.open_pin()
+    assert kiosk.submit_pin("123", T0) is False
+    assert "6 chữ số" in kiosk.view(T0).message
+    assert kiosk.local_context["step"] == "new"
+    assert operators.count(conn) == 0
+
+
+def test_setup_does_not_create_a_second_operator(kiosk, conn):
+    """db_admin.py may create the operator while the nurse is on the second step."""
+    kiosk.open_pin()
+    kiosk.submit_pin("123456", T0)
+    with db.transaction(conn):
+        operators.create(conn, "Nurse A", "999999", iterations=FAST, at=T0)
+    assert kiosk.submit_pin("123456", T0) is False
+    assert operators.count(conn) == 1
+    assert kiosk.view(T0).title != "Tạo mã PIN quản trị"      # back to the ordinary PIN screen
 
 
 # --------------------------------------------------------------------- change PIN
@@ -466,3 +550,74 @@ def test_the_rail_way_out_logs_out_from_wherever_it_is_tapped(kiosk, conn):
     kiosk.open_admin_tab(vm.PATIENTS)
     kiosk.on_button(vm.Button("logout", "Thoát", None), T0)
     assert kiosk.auth.is_unlocked(T0) is False and kiosk.local_screen is None
+
+
+# ---------------------------------------------------------------- match settings tab
+def test_settings_tab_steps_inside_the_configured_range(kiosk, conn):
+    unlocked(kiosk, conn)
+    kiosk.on_button(vm.Button("settings", "", None), T0)
+    view = kiosk.view(T0)
+    assert view.screen == vm.SETTINGS
+    rows = dict((row["key"], row) for row in kiosk.settings_rows())
+    assert rows["match.threshold"]["value"] == "0.80"
+    assert rows["match.margin_top1_top2"]["value"] == u"Không xét"
+
+    assert kiosk.adjust_setting("match.threshold", +1, T0) == 0.85
+    for _ in range(10):
+        kiosk.adjust_setting("match.threshold", +1, T0)
+    assert kiosk.local_context["draft"]["match.threshold"] == 0.95          # capped
+    assert kiosk.settings_rows()[1]["can_inc"] is False or \
+        dict((r["key"], r) for r in kiosk.settings_rows())["match.threshold"]["can_inc"] is False
+    for _ in range(20):
+        kiosk.adjust_setting("match.threshold", -1, T0)
+    assert kiosk.local_context["draft"]["match.threshold"] == 0.50          # floor, not empty
+
+    # The margin may be empty: one step up starts at its minimum, one down empties it.
+    assert kiosk.adjust_setting("match.margin_top1_top2", +1, T0) == 0.05
+    assert kiosk.adjust_setting("match.margin_top1_top2", -1, T0) is None
+
+
+def test_saving_writes_only_what_changed_as_the_unlocked_nurse(kiosk, conn):
+    from edgeface.storage import settings
+
+    operator_id = unlocked(kiosk, conn)
+    kiosk.open_settings()
+    assert kiosk.save_settings(T0) is False                   # nothing changed yet
+    assert kiosk.view(T0).message == u"Không có thay đổi nào để lưu."
+
+    kiosk.adjust_setting("match.threshold", +1, T0)
+    assert kiosk.save_settings(T0) is True
+    assert settings.overrides(conn, kiosk.cfg) == {"match.threshold": 0.85}
+    info = settings.describe(conn, kiosk.cfg, "match.threshold")
+    assert info["operator_id"] == operator_id
+    assert "Nurse A" in dict((r["key"], r) for r in kiosk.settings_rows())[
+        "match.threshold"]["source"]
+
+    kiosk.on_button(vm.Button("settings_reset", "", None), T0)
+    assert settings.overrides(conn, kiosk.cfg) == {}
+
+
+def test_settings_tab_needs_the_pin_and_back_leads_to_the_menu(kiosk, conn):
+    kiosk.open_admin_tab(vm.SETTINGS)
+    assert kiosk.view(T0).screen == vm.PIN                     # locked: PIN first
+    unlocked(kiosk, conn)
+    kiosk.open_settings()
+    kiosk.on_button(vm.Button("cancel", "", None), T0)
+    assert kiosk.view(T0).screen == vm.ADMIN
+
+
+def test_settings_screen_quotes_recent_confirmed_scores(kiosk, conn):
+    from edgeface.storage import sessions
+
+    with db.transaction(conn):
+        for i, (score, action, confirmed) in enumerate(((0.86, "confirm", "BN001"),
+                                                        (0.90, "confirm", "BN001"),
+                                                        (0.40, "reject", None))):
+            sid = sessions.open_session(conn, "identify", T0 + i)
+            sessions.close_session(conn, sid, ended_at=T0 + i, top1_code="BN001",
+                                   top1_score=score, nurse_action=action,
+                                   confirmed_code=confirmed)
+    unlocked(kiosk, conn)
+    kiosk.open_settings()
+    assert sorted(kiosk.recent_confirmed_scores()) == [0.86, 0.90]
+    assert "0.86 – 0.90" in kiosk.view(T0).message

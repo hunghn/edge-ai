@@ -28,7 +28,8 @@ The spec cites decision thresholds in "§6 / §6.3" (S9 matching, S10 rule engin
 - `face_backend/insightface/model_zoo/landmark.py` — 2d106det pre/post-processing.
 - `anti_spoofing/src/generate_patches.py` (`CropImage`), `model_lib/MiniFASNet.py`, `tools/tools.py::check_real_face` — MiniFASNet crops and fusion.
 - Its `.onnx` files are Git LFS pointers (~130 bytes); run `git lfs pull` there before using them.
-- It uses `det_2.5g` + `w600k_r50`, anti-spoof threshold 0.65, ratio-based head pose, and Milvus — all differ from this project's spec below.
+- It uses `det_2.5g` + `w600k_r50`, anti-spoof threshold 0.65 and Milvus — all differ from this project's spec below.
+- Its ratio-based head pose (`tools/tools.py::face_analysis`) **is** used for the S5 gate, with its thresholds (C-25, 2026-10-08): solvePnP with a generic 3D model measures frontal faces at pitch −8°…−22° and rejected every frame.
 
 ## Target platform constraints (Jetson Nano, JetPack 4.6.x)
 
@@ -49,7 +50,7 @@ The spec cites decision thresholds in "§6 / §6.3" (S9 matching, S10 rule engin
 | S2 subject | ROI geometry, largest bbox | center ∈ ROI, side ≥ 110 px; else "step closer" |
 | S3 coarse pose | yaw/roll from 5 kps | \|yaw\| ≤ 25°, \|roll\| ≤ 20°; else "look straight", skip S4 |
 | S4 anti-spoof | MiniFASNetV2 (crop scale 2.7) + MiniFASNetV1SE (scale 4.0), 80×80 BGR, sum softmax | argmax = real and p_real ≥ 0.85; else `spoof_suspect`, save evidence image |
-| S5 landmark + IQA | 2d106det on 192×192 crop (bbox ×1.5), solvePnP pose, Laplacian var, luminance | \|yaw\|,\|pitch\| ≤ 15°, \|roll\| ≤ 10°, blur ≥ 60, 60 ≤ lum ≤ 200; else wait for better frame |
+| S5 landmark + IQA | 2d106det on 192×192 crop (bbox ×1.5), landmark ratios from ims_id_server `face_analysis` (C-25; solvePnP only displayed), Laplacian var, luminance | UD ∈ (0.20, 0.85), RL ∈ [0.5, 2.2], eyes open (> 0.12), mouth closed (< 0.20), \|roll\| ≤ 10°, blur ≥ 60, 60 ≤ lum ≤ 200; else wait for better frame |
 | S6 align | similarity transform to ArcFace 5-pt template | 112×112 RGB |
 | S7 embed | ArcFace, (x−127.5)/127.5, RGB | 512-d, L2-normalized |
 | S8 best-frame | buffer by quality_score | ≤ 5 embeddings in ≤ 1.5 s; < 3 good frames → `low_quality` |

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """The camera preview: how it scales, and what that costs.
 
-The kiosk runs fullscreen on a 3840x2160 screen, so the preview widget is large and the
-480 px picture is blown up around five times. How that enlargement is done was the whole
-of the stutter, which is why it has tests of its own.
+The kiosk runs fullscreen on a 3200x2000 screen, so the preview widget is large (1612 px
+wide). It now gets the camera's own 1920x1080 as raw RGB (C-09); how the picture is
+built and fitted was once the whole of the stutter, which is why it has tests of its own.
 """
 import os
 import time
@@ -104,3 +104,50 @@ def test_painting_a_frame_stays_well_under_the_frame_budget(qt_app, jpeg):
         paint_once()
     per_frame_ms = (time.time() - started) / 20.0 * 1000.0
     assert per_frame_ms < 15.0, "{:.1f} ms per frame".format(per_frame_ms)
+
+
+@pytest.fixture
+def raw_frame():
+    """A 1920x1080 raw preview as the engine writes it (common/preview_frame.py)."""
+    import numpy as np
+
+    from edgeface.common import preview_frame
+
+    rgb = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    rgb[:, :, 0] = 255                          # pure red, in RGB order
+    return preview_frame.encode_header(1920, 1080) + rgb.tobytes()
+
+
+def test_a_raw_frame_is_shown_at_full_resolution_in_its_own_colours(qt_app, raw_frame):
+    from PyQt5 import QtGui
+
+    widget = PreviewWidget()
+    assert widget.show_frame(raw_frame) is True
+    assert (widget._pixmap.width(), widget._pixmap.height()) == (1920, 1080)
+    colour = QtGui.QColor(widget._pixmap.toImage().pixel(5, 5))
+    assert (colour.red(), colour.green(), colour.blue()) == (255, 0, 0)
+
+
+def test_a_torn_or_foreign_raw_frame_is_refused(qt_app, raw_frame, jpeg):
+    widget = PreviewWidget()
+    assert widget.show_frame(raw_frame[:-10]) is False           # written half-way
+    assert widget.show_frame(b"EFP1" + b"\x00" * 4) is False    # 0x0 picture
+    assert widget.show_frame(jpeg) is True                       # JPEG still works
+    assert widget.show_frame(raw_frame) is True
+
+
+def test_fitting_a_1080p_frame_stays_under_the_frame_budget(qt_app, raw_frame):
+    """Building the picture plus one paint into the 1612 px panel, per frame."""
+    from PyQt5 import QtGui
+
+    widget = PreviewWidget()
+    widget.resize(1612, 1644)
+    canvas = QtGui.QPixmap(1612, 1644)
+    started = time.time()
+    for _ in range(10):
+        widget.show_frame(raw_frame)
+        painter = QtGui.QPainter(canvas)
+        painter.drawPixmap(widget.target_rect(), widget._pixmap)
+        painter.end()
+    per_frame_ms = (time.time() - started) / 10.0 * 1000.0
+    assert per_frame_ms < 40.0, "{:.1f} ms per frame".format(per_frame_ms)
